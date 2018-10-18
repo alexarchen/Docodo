@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Docodo": {
+      "commandName": "Project",
+      "workingDirectory": ".\\"
+    }
+  }
+}
