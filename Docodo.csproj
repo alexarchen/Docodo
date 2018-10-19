@@ -10,7 +10,9 @@
   <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
     <PackageReference Include="StemmersNet" Version="1.1.1" />
+    <PackageReference Include="System.Text.Encoding" Version="4.3.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="4.5.0" />
+    <PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
   </ItemGroup>
 
 </Project>

@@ -63,6 +63,7 @@ namespace Docodo
         static void Main(string[] args)
         {
 
+         
             Console.WriteLine("Checking vocs...");
             if (!File.Exists("Dict\\ru.voc"))
             {
@@ -95,10 +96,10 @@ namespace Docodo
                  
              };
 
-            // var enc1252 = CodePagesEncodingProvider.Instance.GetEncoding(1251);
-
-         
+        
             Index<ByteString> ind = new Index<ByteString>("d:\\temp\\index", false, vocs, stemm);
+            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
+            ind.bKeepForms = true;
 
             cancelationToken = ind.cancel; // token to cancel something
 
@@ -123,9 +124,14 @@ namespace Docodo
                         Index<ByteString>.SearchResult result = ind.Search(req);
 
                         Console.WriteLine("Found {0} pages in {1} docs:", result.foundPages.Count, result.foundDocs.Count);
-                        foreach (Index<ByteString>.ResultDocPage p in result.foundPages)
-                            Console.WriteLine("Page {0} in {1} ({2} times)", p.id, p.doc.Name, p.number);
-
+                        foreach (var d in result.foundDocs)
+                        {
+                            Console.WriteLine($"Doc: {d.Name}, Found {d.pages.Count} pages");
+                            foreach (var p in d.pages) {
+                                Console.WriteLine($"  Page {p.id} ({p.number} times)");
+                                Console.WriteLine("    Text: "+ p.text);
+                            }
+                        }
                         Console.Write("req:");
                     }
 
@@ -138,34 +144,37 @@ namespace Docodo
                 {
                     Console.WriteLine($"Start Indexing {path}...");
 
-                    IIndexDataSource[] sources = new IIndexDataSource[] { new IndexTextFilesDataSource(path, "*.txt",1251) };
-                    Task ret = ind.CreateBy(sources);
+                    Task ret = ind.Create();
 
                     // user input task
+                   
                     Task cT = new Task(() =>
                     {
                         do
                         {
-                            char bc = Console.ReadKey().KeyChar;
+                            while (Console.In.Peek() == -1)
+                            {
+                                Thread.Sleep(200);
+                                if (cancelationToken == null) break;
+                            }
 
                             if (cancelationToken != null)
                             {
+
+                                char bc = (char) Console.In.Read();
+
                                 if (bc == 'c')
                                 {
                                     Console.WriteLine("Indexing was interrupted by user.");
                                     cancelationToken.Cancel();
+                                    break;
                                 }
                             }
-                            else
-                            {
-                                Console.WriteLine("Exiting...");
-                                break;
-                            }
                         }
-                        while (true);
+                        while (cancelationToken!=null);
 
                     });
-                    cT.Start();
+                    cT.Start(); // listen console to interrupt 
                     try
                     {
                         ret.Wait();
@@ -176,9 +185,9 @@ namespace Docodo
 
                     }
                     cancelationToken = null;
-                    foreach (IIndexDataSource sourse in sources) sourse.Dispose();
+                   
 
-                    Console.WriteLine("Indexing complited. Press any key...");
+                    Console.WriteLine("Indexing complited.");
 
                 }
             }

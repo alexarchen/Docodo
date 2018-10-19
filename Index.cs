@@ -9,6 +9,7 @@ using System.Linq;
 using DynamicExpresso;
 using System.Text;
 using Iveonik.Stemmers;
+using System.Text.RegularExpressions;
 
 namespace Docodo
 {
@@ -24,14 +25,8 @@ namespace Docodo
         int Length { get; }
 
     }
-    /* TODO: for large simbols language
-    public class DoubleByteString : List<char>, IIndexString
-    {
-        
-    }*/
 
     /* Single byte string for mostly used languages like romanian, cyrillic and so on.. */
-
     public class ByteString : List<byte>, IIndexString, IComparable<ByteString>
     {
         public ByteString() : base()
@@ -99,9 +94,9 @@ namespace Docodo
         }
         void IIndexString.FromInt(int i)
         {
-            Clear();
-            AddRange(new byte[] {(byte)('#'), (byte)((i >> 24) & 0xFF), (byte)((i>>16)&0xFF), (byte)((i >> 8) & 0xFF) , (byte)((i) & 0xFF) });
+            ((IIndexString)this).FromString("#" + Convert.ToBase64String(new byte[] { (byte)((i >> 24) & 0xFF), (byte)((i >> 16) & 0xFF), (byte)((i >> 8) & 0xFF), (byte)((i) & 0xFF) }).TrimEnd('='));
         }
+
         public static ByteString CreateFromString(string s)
         {
             return (new ByteString(s));
@@ -160,6 +155,9 @@ namespace Docodo
         const long MAX_FILE_SIZE = 200000000; // Maximum indexable text file size
         const int COORD_DEVIDER = 1; // devider of coordinates in index
         const int SUBWORD_LENGTH = 4; // words in index are splittered by groups of this number of chars
+        const int MAX_FOUND_PAGES = 1000; // maximum output found pages
+        const int MAX_FOUND_PAGES_IN_DOC = 100; // maximum output found pages in one document
+
         /* Index constructor
          *   path - working folder, if set it will load 
          *            autmatically, else set WorkPath before call to CreateBy
@@ -194,9 +192,17 @@ namespace Docodo
 
         public class SearchResult
         {
-            public HashSet<Document> foundDocs = new HashSet<Document>();
+            public HashSet<ResultDocument> foundDocs = new HashSet<ResultDocument>();
             public List<ResultDocPage> foundPages = new List<ResultDocPage>();
         }
+        public class ResultDocument: Document
+        {
+            public ResultDocument() : base() { }
+            public ResultDocument(Document d) : base(d.Name,d.nPages) { }
+            public ResultDocument(string s, int n=0) : base(s,n) { }
+            public HashSet<ResultDocPage> pages=new HashSet<ResultDocPage>();
+        }
+
         public class ResultDocPage : DocPage
         {
             public ResultDocPage(DocPage p) : base(p.doc, p.id)
@@ -205,6 +211,7 @@ namespace Docodo
             }
             public int number { get => pos.Count; } // number of found
             public List<int> pos = new List<int>(); // positions on the page
+            public string text; //surrounding text
         }
 
         private IndexSequence LoadSequence(IndexSequence seq)
@@ -327,8 +334,9 @@ namespace Docodo
                     var interpreter = new Interpreter();
 
                     req = req.ToLower();
-                    req = System.Text.RegularExpressions.Regex.Replace(req, @"\b(^\w|[()])+\b", " ");
-                    req = System.Text.RegularExpressions.Regex.Replace(req, @"\b(\w+)\b", "Get(\"${0}\") * ");
+                    req = Regex.Replace(req, @"\b\w{1,2}\b", " ");
+                    req = Regex.Replace(req, @"\b(^\w|[()])+\b", " ");
+                    req = Regex.Replace(req, @"\b(\w+)\b", "Get(\"${0}\") * ");
                     req = req.TrimEnd(new char[] { ' ', '*' });
 
                     int R = 255;
@@ -347,7 +355,9 @@ namespace Docodo
                         Console.WriteLine("Found!");
                         SearchResult result = new SearchResult();
                         DocPage prevp = null;
+                        Document prevd = null;
                         ResultDocPage lastResultDocPage = null;
+                        ResultDocument lastDoc = null;
                         foreach (ulong coord in res)
                         {
 
@@ -357,12 +367,47 @@ namespace Docodo
                                 lastResultDocPage = new ResultDocPage(_p);
                                 lastResultDocPage.pos.Add((int)(coord - _p.coord));
                                 result.foundPages.Add(lastResultDocPage);
-                                result.foundDocs.Add(lastResultDocPage.doc);
+                                if (prevd != _p.doc)
+                                {
+                                    ResultDocument doc = new ResultDocument(_p.doc);
+                                    result.foundDocs.Add(doc);
+                                    lastDoc = doc;
+                                }
+                                lastResultDocPage.doc = lastDoc;
+                                lastDoc.pages.Add(lastResultDocPage);
                                 prevp = _p;
+                                prevd = _p.doc;
                             }
                             else
                                 lastResultDocPage.pos.Add((int)(coord - _p.coord));
 
+                            if (result.foundPages.Count > MAX_FOUND_PAGES) break;
+
+                        }
+                        // retrieve surrounding text
+                        
+                        foreach (var doc in result.foundDocs){
+                            foreach (var source in sources)
+                             if (source.Name.Equals(doc.Name.Split(':')[0])) 
+                                {
+                                    if ((source!=null) && (source is IIndexDirectDataSource))
+                                    {
+                                        IIndexDirectDocument document = (source as IIndexDirectDataSource)[doc.Name.Substring(doc.Name.Split(':')[0].Length + 1)];
+                                        foreach (var page in doc.pages)
+                                        {
+                                           string text =  document[page.id].text;
+                                            int[] Range = { 0, 0 };
+                                            Range[0] = Math.Min(Math.Max(0,page.pos.Min()-64), text.Length);
+                                            Range[1] = Math.Min(Math.Min(page.pos.Max()+64,text.Length),Range[0]+256);
+
+                                            page.text = PreparePageText(text.Substring(Range[0], Range[1] - Range[0]));
+
+
+                                        }
+                                    }
+                                    break;
+                                }
+                            
                         }
 
 
@@ -379,6 +424,18 @@ namespace Docodo
 
             Console.WriteLine("Not fond!");
             return (new SearchResult());
+        }
+        private static string PreparePageText(string text)
+        {
+            text = Regex.Replace(text, @"\b\W*\.+\W*\b", ". ");
+            text = Regex.Replace(text, @"\b\W*\?+\W*\b", "? ");
+            text = Regex.Replace(text, @"\b\W*!+\W*\b", "! ");
+            text = Regex.Replace(text, @"\b\W*:+\W*\b", ": ");
+            text = Regex.Replace(text, @"\b\W*,+\W*\b", ", ");
+            text = text.Replace("\r", " ");
+            text = text.Replace("\n", " ");
+            return (text);
+
         }
 
         public bool Load(string path)
@@ -467,12 +524,28 @@ namespace Docodo
 
         private object DoSearchLock = new object();
 
-        public Task CreateBy(IIndexDataSource[] sources)
+        private IIndexDataSource[] sources;
+
+        public void AddDataSource(IIndexDataSource source)
         {
+            if (sources == null) { sources = new IIndexDataSource[1]; sources[0] = source; }
+            else
+            {
+             Array.Resize(ref sources, sources.Length + 1);
+             sources[sources.Length - 1] = source;
+            }
+            
+        }
+
+        public Task Create()
+        {
+            if ((sources==null) || (sources.Length==0) || (sources[0]==null)) return null;
 
             if (status == Status.Idle)
             { //first time
                 //Close();
+                long startTime = Environment.TickCount;
+
                 status = Status.Nav;
                 cancel = new CancellationTokenSource();
                 po.CancellationToken = cancel.Token;
@@ -518,6 +591,8 @@ namespace Docodo
                         Array.ForEach(Directory.GetDirectories(WorkPath), i => Directory.Delete(i, true));
 
                         status = Status.Idle;
+
+                        Console.WriteLine("Time elasped: {0} s",(Environment.TickCount - startTime) / 1000);
                     }
                     catch (Exception e)
                     {
@@ -985,7 +1060,7 @@ namespace Docodo
 
                     Console.WriteLine("ID:{0} <-{1}", Task.CurrentId, doc.Name);
                     // TODO: File must fit RAM
-                    files.Add(new KeyValuePair<string, ulong>(doc.Name, index.maxCoord));
+                    files.Add(new KeyValuePair<string, ulong>(source.Name+":"+doc.Name, index.maxCoord));
 
                     foreach (IndexPage page in doc)
                     {
@@ -1021,21 +1096,31 @@ namespace Docodo
                                                 {
                                                     // writing group number rather then parts of the word
 
-                                                    if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(ss)))
-                                                        nG = 0;
-                                                    else
+                                                    //if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(ss)))
+                                                    //    nG = 0;
+                                                    //else
                                                     {
-                                                        //byte[] arr = new byte[] { (byte)(nG & 0xFF), (byte)((nG << 8) & 0xFF), (byte)((nG << 16) & 0xFF), (byte)((nG << 24) & 0xFF) };
                                                         TString str = (new TString());
                                                         str.FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK) );
                                                         index.Add(str, coord + (uint)qq);
+                                                        if ((bKeepForms) && (stemmed.Length<ss.Length))
+                                                        { // reminder
+                                                            str = new TString();
+                                                            if (ss.Length - stemmed.Length <= 2)
+                                                                str.FromString("$" + ss[0] + ":" + ss.Substring(stemmed.Length));
+                                                            else
+                                                                str.FromString("$" + ss.Substring(stemmed.Length));
+                                                            index.Add(str, coord + (uint)qq+1);
+
+                                                        }
                                                     }
                                                     break;
 
                                                 }
                                                 nVoc++;
                                             }
-                                            if ((nG==0) || (bKeepForms))
+
+                                            if (nG==0) 
                                             {
                                                 string news = "<" + ss + ">";
                                                 for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
@@ -1052,7 +1137,7 @@ namespace Docodo
                                 ss += c[qq];
                             }
                             coord += (uint) c.Length;
-                            files.Add(new KeyValuePair<string, ulong>(":" + page.id, index.maxCoord));
+                            files.Add(new KeyValuePair<string, ulong>(":" + page.id, coord));
                         }
                         catch (Exception e)
                         {
@@ -1061,7 +1146,6 @@ namespace Docodo
 
                     }
                 }
-                //} while ((NavTasks > 0) || (!filesToDo.IsEmpty));
 
                 index.Save();
 
