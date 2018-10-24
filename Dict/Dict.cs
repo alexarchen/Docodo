@@ -16,7 +16,12 @@ namespace Docodo
         public const int GROUP_NUMBER_MASK = 0xFFFFFF;
 
         public char[] Range = { 'a', 'z' }; // letters range of this vocab
-
+        public IStemmer stemmer;
+        public Vocab(IStemmer s = null)
+        {
+            stemmer = s;
+        }
+        public string Stem(string s) { if (stemmer != null) return (stemmer.Stem(s)); return s; }
         public void Load(string fname)
         {
             BinaryReader r = new BinaryReader(File.OpenRead(fname));

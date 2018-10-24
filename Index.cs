@@ -15,142 +15,9 @@ using System.Linq.Expressions;
 
 namespace Docodo
 {
-    public interface IIndexString // : IEnumerable, IComparable
-    {
-        void FromString(string s);
-        void FromInt(int i);
-        string ToString();
-        void Read(BinaryReader binaryReader);
-        void Write(BinaryWriter binaryWriter);
-        int CompareTo(IIndexString s);
-        bool Equals(IIndexString s);
-        int Length { get; }
-
-    }
-
-    /* Single byte string for mostly used languages like romanian, cyrillic and so on.. */
-    public class ByteString : List<byte>, IIndexString, IComparable<ByteString>
-    {
-        public ByteString() : base()
-        {
-
-        }
-        public ByteString(string s) : base()
-        {
-            ((IIndexString)(this)).FromString(s);
-        }
-
-        public ByteString(byte[] arr) : base(arr)
-        {
-
-        }
 
 
-        public override string ToString()
-        {
-            char[] chars = new char[Length];
-
-            for (int q = 0; q < Length; q++)
-            {
-                byte b = this[q];
-                if (b >= 0xC0)
-                    chars[q] = (char)(0x410 + (b - 0xC0));
-                else
-                if (b == 0xA8) chars[ q] = 'Ё';
-                else
-                if (b == 0xB8) chars[q] = 'ё';
-                else
-                    chars[q] = (char)b;
-
-            }
-            return (new String(chars));
-
-        }
-        string IIndexString.ToString() {
-            return ToString();
-        }
-
-        void IIndexString.FromString(string s)
-        {
-            byte[] arr = new byte[s.Length];
-            int w = 0;
-            foreach (char c in s)
-            {
-                if (c < 0x7F) arr[w] = (byte)c;
-                else
-                {
-                    if ((c >= 'а') && (c <= 'я')) arr[w] = (byte)(0xE0 + (c - 'а'));
-                    else
-                    if ((c >= 'А') && (c <= 'Я')) arr[w] = (byte)(0xC0 + (byte)(c - 'А'));
-                    else if (c == 'ё') arr[w] = 0xB8;
-                    else if (c == 'Ё') arr[w] = 0xA8;
-                    else
-                        arr[w] = (byte)(c & 0xFF);
-                }
-
-                w++;
-            }
-            Clear();
-            AddRange(arr);
-
-        }
-        void IIndexString.FromInt(int i)
-        {
-            ((IIndexString)this).FromString("#" + Convert.ToBase64String(new byte[] { (byte)((i >> 24) & 0xFF), (byte)((i >> 16) & 0xFF), (byte)((i >> 8) & 0xFF), (byte)((i) & 0xFF) }).TrimEnd('='));
-        }
-
-        public static ByteString CreateFromString(string s)
-        {
-            return (new ByteString(s));
-        }
-        public int Length { get => Count; }
-
-        public bool Equals(ByteString s)
-        {
-            return (CompareTo(s) == 0);
-        }
-        bool IIndexString.Equals(IIndexString s)
-        {
-            if (s.GetType().Equals(GetType()))
-                return (CompareTo((ByteString)s) == 0);
-            return (false);
-        }
-
-        public int CompareTo(ByteString index)
-        {
-            int w = 0;
-            foreach (byte b in this)
-            {
-                if (w >= index.Length) { return (1); }
-                if (b > index[w]) { return (1); }
-                if (b < index[w]) { return (-1); }
-                w++;
-            }
-            if (index.Length == Length) return (0);
-            return (-1);
-        }
-
-        int IIndexString.CompareTo(IIndexString s){
-
-            if (s.GetType().Equals(GetType()))
-                return (CompareTo((ByteString)s));
-
-            return (0);
-        }
-
-        public static implicit operator byte[] (ByteString s)
-        {
-            return (s.ToArray());
-        }
-
-        void IIndexString.Read(BinaryReader binaryReader) { byte l = binaryReader.ReadByte(); Clear();  AddRange(binaryReader.ReadBytes(l)); }
-
-        void IIndexString.Write(BinaryWriter binaryWriter) { binaryWriter.Write((byte)Length); binaryWriter.Write(ToArray()); }
-
-    }
-
-
-    class Index<TString> : SortedList<TString, IndexSequence> where TString : IIndexString, new()
+    class Index : SortedList<string, IndexSequence> 
     {
         const int MAX_DEF_TMP_INDEXITEMS = 1000000; // Maximum items in tempindex
         const int MAX_WORD_LENGTH = 32;      // Maximum word length
@@ -171,7 +38,7 @@ namespace Docodo
             return new IndexSequence((new ulong[] { i }));
          }
 
-        public Index(string path, bool InMemory, Vocab []vocs=null, Func<string, string> stemmer = null) : base()
+        public Index(string path, bool InMemory, Vocab []vocs=null) : base()
         {
           
             MaxDegreeOfParallelism = 2;
@@ -179,7 +46,7 @@ namespace Docodo
             WorkPath = path;
             if (path.Length > 0)
                 Load(path);
-            Stemm = stemmer;
+            
             this.InMemory = InMemory;
             this.vocs = vocs;
         }
@@ -188,14 +55,8 @@ namespace Docodo
         public bool bKeepForms { get; set; } = false;/* Keep full forms of the words */
         public bool CanSearch { get; private set; } = false; /* If index is loaded */
 
-        private static TString FromString(string s)
-        {
-            TString ret = new TString();
-            ret.FromString(s);
-            return (ret);
-        }
-        private static TString ReadIndexString(BinaryReader binaryReader) { TString ret = new TString(); ret.Read(binaryReader); return (ret); }
-
+       
+   
         public class SearchResult
         {
             public HashSet<ResultDocument> foundDocs = new HashSet<ResultDocument>();
@@ -219,6 +80,8 @@ namespace Docodo
             public List<int> pos = new List<int>(); // positions on the page
             public string text; //surrounding text
         }
+
+        private static string FromInt(int i) { return ("#" + Convert.ToBase64String(new byte[] { (byte)((i >> 24) & 0xFF), (byte)((i >> 16) & 0xFF), (byte)((i >> 8) & 0xFF), (byte)((i) & 0xFF) }).TrimEnd('=')); }
 
         private IndexSequence LoadSequence(IndexSequence seq)
         {
@@ -254,7 +117,7 @@ namespace Docodo
             Close();
 
         }
-        public IndexSequence this[TString key]
+        public IndexSequence this[string key]
         {
            get {
             IndexSequence seq = base[key];
@@ -287,8 +150,7 @@ namespace Docodo
                 }
                 if (nG != 0)
                 {
-                    TString str = new TString();
-                    str.FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK));
+                    string str = FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK));
                     return (this[str]);
 
                 }
@@ -298,8 +160,8 @@ namespace Docodo
 
                     for (int q = 0; q < word.Length; q += SUBWORD_LENGTH)
                     {
-                        if (res == null) res = this[FromString(word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH)))];
-                        else res *= this[FromString(word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH)))];
+                        if (res == null) res = this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
+                        else res *= this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
                         res.R = -(q + 1);
                     }
                     IndexSequence newres = new IndexSequence();
@@ -491,7 +353,7 @@ namespace Docodo
                         bin.ReadUInt64();
                         do
                         {
-                            TString s = ReadIndexString(bin);
+                            string s = bin.ReadString();
                             int n = bin.ReadInt32();
 
                            
@@ -714,8 +576,8 @@ namespace Docodo
                 wr.Write(maxCoords.Max());
 
 
-                TString[] s = new TString[files.Length]; // next words
-                Array.Fill(s, FromString(" "));
+                string[] s = new string[files.Length]; // next words
+                Array.Fill(s, " ");
                 int[] n = new int[files.Length]; // numbers of coords in vectors
                 uint[][] arr = new uint[files.Length][]; // coord arrays
                 bool[] readnext = new bool[files.Length]; // what index read next
@@ -730,7 +592,7 @@ namespace Docodo
                         {
                             try
                             {
-                                s[q] = ReadIndexString(bins[q]);
+                                s[q] = bins[q].ReadString();
                                 n[q] = bins[q].ReadInt32();
                                 arr[q] = new uint[n[q]];
 
@@ -739,16 +601,16 @@ namespace Docodo
                             }
                             catch (EndOfStreamException e)
                             {
-                                s[q] = FromString("");
+                                s[q] = "";
                             }
 
                         }
                     // define next step
-                    List<KeyValuePair<TString, int>> list = new List<KeyValuePair<TString, int>>();
+                    List<KeyValuePair<string, int>> list = new List<KeyValuePair<string, int>>();
                     for (int q = 0; q < files.Length; q++)
                         if (s[q].Length > 0) // was previously read
-                            list.Add(new KeyValuePair<TString, int>(s[q], q));
-                    list.Sort(new Comparison<KeyValuePair<TString, int>>((a, b) =>
+                            list.Add(new KeyValuePair<string, int>(s[q], q));
+                    list.Sort(new Comparison<KeyValuePair<string, int>>((a, b) =>
                     {
                     // compare by words and then by coordinates
                     int i = a.Key.CompareTo(b.Key);
@@ -772,7 +634,7 @@ namespace Docodo
                                 nsize += n[list[q].Value];
                             }
 
-                        s[list[0].Value].Write(wr);
+                        wr.Write(s[list[0].Value]);
                         wr.Write(nsize);
                         for (int q = 0; q < files.Length; q++)
                             if (readnext[q])
@@ -1003,7 +865,7 @@ namespace Docodo
 
         /* Thread Safe temporary index class */
         /* Temporary indexes then merged into final index */
-        class TempIndex : SortedList<TString, List<uint>>
+        class TempIndex : SortedList<string, List<uint>>
         {
             public int nTmpIndex = 0;
 
@@ -1022,7 +884,7 @@ namespace Docodo
 
             /* Add word into TemIndex
              * coord must be greater with each call */
-            public void Add(TString word, uint coord)
+            public void Add(string word, uint coord)
             {
                 maxCoord = coord; // coord increases with each call
                 List<uint> val;
@@ -1050,9 +912,9 @@ namespace Docodo
                     BinaryWriter bin = new BinaryWriter(file);
                     bin.Write(maxCoord);
 
-                    foreach (KeyValuePair<TString, List<uint>> item in this)
+                    foreach (KeyValuePair<string, List<uint>> item in this)
                     {
-                        item.Key.Write(bin);
+                        bin.Write(item.Key);
                         bin.Write(item.Value.Count);
                         // TODO: convert ot bytes
                         item.Value.ForEach((i) =>
@@ -1077,12 +939,7 @@ namespace Docodo
         public string WorkPath;
 
 
-        public Func<String, string> Stemm = null;
-
-
-
-        //private BlockingCollection<uint> nextCoord;
-
+      
         private void IndexTask(IIndexDataSource source)
         {
            
@@ -1137,16 +994,16 @@ namespace Docodo
                                         {
                                             uint d = 0;
                                             string stemmed = ss;
-                                            if (Stemm != null)
+                                            /*if (Stemm != null)
                                             {
                                                 stemmed = Stemm(ss);
-                                            }
+                                            }*/
 
                                             int nG = 0;
                                             int nVoc = 0;
                                             foreach (Vocab voc in vocs)
                                             {
-                                                if ((voc != null) && (stemmed[0] >= voc.Range[0]) && (stemmed[0] <= voc.Range[1]) && ((nG = voc.Search(stemmed)) != 0))
+                                                if ((voc != null) && (ss[0] >= voc.Range[0]) && (ss[0] <= voc.Range[1]) && ((stemmed = voc.Stem(ss))!=null)  && ((nG = voc.Search(stemmed)) != 0))
                                                 {
                                                     // writing group number rather then parts of the word
 
@@ -1154,21 +1011,20 @@ namespace Docodo
                                                     //    nG = 0;
                                                     //else
                                                     {
-                                                        TString str = (new TString());
-                                                        str.FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
+                                                        string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
                                                         index.Add(str, coord + (uint)qq);
                                                         if ((bKeepForms) && (stemmed.Length < ss.Length))
                                                         { // reminder
-                                                            str = new TString();
+                                                            str = "";
                                                             if (ss.Length - stemmed.Length <= 2)
-                                                                str.FromString("$" + ss[0] + ":" + ss.Substring(stemmed.Length));
+                                                                str ="$" + ss[0] + ":" + ss.Substring(stemmed.Length);
                                                             else
-                                                                str.FromString("$" + ss.Substring(stemmed.Length));
+                                                                str="$" + ss.Substring(stemmed.Length);
                                                             index.Add(str, coord + (uint)qq + 1);
 
                                                         }
                                                     }
-                                                    break;
+                                                    //break;
 
                                                 }
                                                 nVoc++;
@@ -1179,7 +1035,7 @@ namespace Docodo
                                                 string news = "<" + ss + ">";
                                                 for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
                                                 {
-                                                    index.Add(FromString(news.Substring(q, Math.Min(news.Length - q, SUBWORD_LENGTH))), (coord + (uint)qq + d) / COORD_DEVIDER);
+                                                    index.Add(news.Substring(q, Math.Min(news.Length - q, SUBWORD_LENGTH)), (coord + (uint)qq + d) / COORD_DEVIDER);
                                                     d++;
                                                 }
                                             }

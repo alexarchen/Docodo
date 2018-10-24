@@ -97,13 +97,13 @@ namespace Docodo
                  }
              };
 
-            String path = "d:\\temp\\bse\\test";
+            String path = "d:\\temp\\bse";
             
-            Index<ByteString> ind = new Index<ByteString>("d:\\temp\\index", false, vocs, stemm);
+            Index ind = new Index("d:\\temp\\index", false, vocs, stemm);
 
-            ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
+            //ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
             //ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
-            //            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
+                        ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
             //            ind.AddDataSource(new IndexTextFilesDataSource("txt", path, "*.txt", 1251));
             ind.bKeepForms = true;
 
@@ -127,7 +127,7 @@ namespace Docodo
                     while (!(req = Console.ReadLine()).Equals("e"))
                     {
                          
-                        Index<ByteString>.SearchResult result = ind.Search(req);
+                        Index.SearchResult result = ind.Search(req);
 
                         Console.WriteLine("Found {0} pages in {1} docs:", result.foundPages.Count, result.foundDocs.Count);
                         foreach (var d in result.foundDocs)
