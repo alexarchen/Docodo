@@ -62,8 +62,8 @@ namespace Docodo
 
         static void Main(string[] args)
         {
+   
 
-         
             Console.WriteLine("Checking vocs...");
             if (!File.Exists("Dict\\ru.voc"))
             {
@@ -80,39 +80,45 @@ namespace Docodo
             vocs[0].Load("Dict\\en.voc");
             vocs[1].Load("Dict\\ru.voc");
 
-            //            String path = "c:\\temp";
-            String path = "d:\\temp\\bse\\test";
 
             RussianStemmer rus = new RussianStemmer();
             EnglishStemmer eng = new EnglishStemmer();
 
+            object stemmlocker = new object();
             Func<string, string> stemm = (s) =>
              {
-                 if (s.Length <= 1) return s;
-                 if (s[0] < 'z') // english
-                     return (eng.Stem(s));
-                 else
-                     return (rus.Stem(s));
-                 
+                 lock (stemmlocker)
+                 {
+                     if (s.Length <= 1) return s;
+                     if (s[0] < 'z') // english
+                         return (eng.Stem(s));
+                     else
+                         return (rus.Stem(s));
+                 }
              };
 
-        
+            String path = "d:\\temp\\bse\\test";
+            
             Index<ByteString> ind = new Index<ByteString>("d:\\temp\\index", false, vocs, stemm);
-            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
+
+            ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
+            //ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
+            //            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
+            //            ind.AddDataSource(new IndexTextFilesDataSource("txt", path, "*.txt", 1251));
             ind.bKeepForms = true;
 
             cancelationToken = ind.cancel; // token to cancel something
 
             if (ind.CanSearch) Console.WriteLine("Index loaded, contains {0} words", ind.Count());
 
-            char c;
+            ConsoleKey c;
             do
             {
 
                 Console.WriteLine("Press i to index" + (ind.CanSearch ? ", s to search" : "") + ", e to exit...");
-                c = Console.ReadKey().KeyChar;
+                c = Console.ReadKey(false).Key;
 
-                if (c == 's')
+                if (c==ConsoleKey.S)
                 {
                     Console.WriteLine("Type text to search, e - exit");
                     Console.Write("req:");
@@ -140,7 +146,7 @@ namespace Docodo
 
                 }
                 else
-                if (c == 'i')
+                if (c == ConsoleKey.I)
                 {
                     Console.WriteLine($"Start Indexing {path}...");
 
@@ -161,9 +167,9 @@ namespace Docodo
                             if (cancelationToken != null)
                             {
 
-                                char bc = (char) Console.In.Read();
+                                //char bc = (char); //In.Read();
 
-                                if (bc == 'c')
+                                if (Console.ReadKey().Key == ConsoleKey.C)
                                 {
                                     Console.WriteLine("Indexing was interrupted by user.");
                                     cancelationToken.Cancel();
@@ -174,7 +180,7 @@ namespace Docodo
                         while (cancelationToken!=null);
 
                     });
-                    cT.Start(); // listen console to interrupt 
+                    //cT.Start(); // listen console to interrupt 
                     try
                     {
                         ret.Wait();
@@ -191,7 +197,7 @@ namespace Docodo
 
                 }
             }
-            while (c != 'e');
+            while (c != ConsoleKey.E);
         }
     }
 

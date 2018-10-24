@@ -1,10 +1,15 @@
-﻿using System;
+﻿using HtmlAgilityPack;
+using iTextSharp.text.pdf;
+using iTextSharp.text.pdf.parser;
+using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,7 +26,7 @@ namespace Docodo
         }
     };
 
-    public interface IIndexDocument : IEnumerable<IndexPage>, IEnumerator<IndexPage>, IDisposable
+    public interface IIndexDocument : IEnumerable<IndexPage>, IDisposable
     {
         /* Name must be unique inside source*/
         string Name { get; }
@@ -29,10 +34,13 @@ namespace Docodo
     }
 
     
-    public interface IIndexDataSource : IEnumerable<IIndexDocument>, IEnumerator<IIndexDocument>, IDisposable
+    public interface IIndexDataSource: IDisposable //: IEnumerable<IIndexDocument>, IEnumerator<IIndexDocument>
     {
         /* Name must be unique inside index and short*/
         string Name { get;  }
+        void Reset(); // sets to initial counter
+        IIndexDocument Next(bool wait=true); // iterate next element
+        
     }
 
     /* implement these interface to direct access from indext 
@@ -134,7 +142,28 @@ namespace Docodo
 
     }
     
+    /* Class to simply represent text document for DOCODO index */
+    public class IndexOnePageTextFile: IIndexDocument
+    {
+        private List<IndexPage> pages = new List<IndexPage>();
+        public string Name { get; }
+        public IndexOnePageTextFile(string name,string text)
+        {
+            Name = name;
+            pages.Add(new IndexPage("0", text));
+        }
+        public IEnumerator<IndexPage> GetEnumerator()
+        {
+            return (pages.GetEnumerator());
+        }
 
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return (this.GetEnumerator());
+        }
+        public void Dispose() { }
+
+    }
 
     /* Simple paginated text files data source */
     /* Single thread, single enumerator !!!! */
@@ -156,22 +185,24 @@ namespace Docodo
             this.Name = Name;
             this.mod = mod;
             encodePage = EncodePage;
-            filesToDo = new ConcurrentQueue<string>();
+            filesToDo = new ConcurrentQueue<IndexedTextFile>();
         }
 
-        public void Dispose()
+        virtual public void Dispose()
         {
             cts.Cancel();
             filesToDo.Clear();
         }
+
         ~IndexTextFilesDataSource()
         {
             cts.Cancel();
 
         }
 
-        ConcurrentQueue<string> filesToDo;
+        ConcurrentQueue<IndexedTextFile> filesToDo;
 
+        // not thread safe yet
         public IIndexDirectDocument this[string filename]
         {
             get
@@ -187,10 +218,13 @@ namespace Docodo
             Console.WriteLine($"Nav {folder} start...");
             try
             {
-                foreach (String file in Directory.GetFiles(folder, mod))
+                List<string> filelist = new List<string>();
+                foreach (string modic in mod.Split(";"))
+                    filelist.AddRange(Directory.GetFiles(folder, modic));
+                foreach (String file in filelist)
                 {
                     Console.WriteLine($"QUEUE {file}");
-                    filesToDo.Enqueue(file);
+                    filesToDo.Enqueue(new IndexedTextFile(file,this));
                     _event.Set();
 
                 }
@@ -209,22 +243,22 @@ namespace Docodo
             }
         }
 
-        public string Name { get; private set; }
-        public class IndexedTextFile : IIndexDirectDocument
+        public string Name { get; protected set; }
+        public class IndexedTextFile : IIndexDirectDocument, IEnumerator<IndexPage>
         {
             StreamReader sr = null;
             const int PAGE_SIZE = 3000; 
-
+            public string fname { get; protected set; }
             public IndexedTextFile(string fname, IndexTextFilesDataSource parent)
             {
-                sr = new StreamReader(fname, new Windows1251().GetEncoding(1251));
-                Name = fname.Substring(fname.IndexOf('\\',parent.path.Length)+1);
+                this.fname = fname;
+                Name = fname.Substring(fname.IndexOfAny(new char[] { '\\', '/' },parent.path.Length)+1);
                 this.parent = parent;
             }
             public IndexTextFilesDataSource parent { get; private set; }
             public string Name { get; private set; }
             private int npage = -1;
-            private IndexPage _current;
+            protected IndexPage _current;
             
             public IndexPage Current {
                 get { return (_current); }
@@ -238,6 +272,7 @@ namespace Docodo
                 get
                 {
                     char[] buff = new char[PAGE_SIZE];
+                    if (sr==null) sr = new StreamReader(fname, new Windows1251().GetEncoding(1251));
                     if (sr != null)
                     {
                         sr.BaseStream.Seek(Int32.Parse(id) * PAGE_SIZE, SeekOrigin.Begin);
@@ -253,8 +288,9 @@ namespace Docodo
             }
             object IEnumerator.Current => Current;
 
-            public bool MoveNext() { npage++; 
+            virtual public bool MoveNext() { npage++; 
                 char[] buff = new char[PAGE_SIZE];
+                if (sr == null) sr = new StreamReader(fname, new Windows1251().GetEncoding(1251));
                 int iread = sr.Read(buff, 0, PAGE_SIZE);
                 if (iread > 0)
                 {
@@ -264,7 +300,7 @@ namespace Docodo
 
                 return (true);
             }
-            public void Reset() {
+            virtual public void Reset() {
                 npage = -1;
                 if (sr != null)
                 {
@@ -283,60 +319,39 @@ namespace Docodo
                 return (this);
             }
 
-            public void Dispose()
+            virtual public void Dispose()
             {
                 if (sr != null)
                 { sr.Close(); sr = null; }
             }
         }
 
-        IndexedTextFile _current;
 
-        public IEnumerator<IIndexDocument> GetEnumerator()
+        public virtual IIndexDocument Next(bool wait = true)
         {
-            Reset();
-
-            return (this);
-        }
-
-        object IEnumerator.Current => Current;
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return (this);
-        }
-
-        public IIndexDocument Current
-        { get  {  return _current; }   }
-
-         public bool MoveNext()
-         {
             try
             {
-                if ((filesToDo.Count == 0) && (isNavigating))
+                if ((filesToDo.Count == 0) && (isNavigating) && (wait))
                 {
                     _event.Reset();
                     _event.WaitOne();
                     // waiting until nask completed or current
-
                 }
-                string str;
-                if (filesToDo.TryDequeue(out str))
+                IndexedTextFile file;
+                if (filesToDo.TryDequeue(out file))
                 {
-                    _current = new IndexedTextFile(str,this);
-                    return (true);
+                    return (file);
                 }
             }
-            catch(Exception e)
+            catch (Exception e)
             {
 
             }
-            return (false);
-
+            return (null);
 
         }
 
-        public void Reset() {
+        virtual public void Reset() {
             if (!isNavigating)
             {
                 filesToDo.Clear();
@@ -360,42 +375,45 @@ namespace Docodo
         public string Name { get => source.Name; }
         public string filename;
         IIndexDataSource source;
-        IEnumerator<IIndexDocument> enumerator;
+       // IEnumerator<IIndexDocument> enumerator;
 
         ZipArchive archive;
+        private Stream stream=null;
         /* filename - cache file name */
         public IndexTextCacheDataSource(IIndexDataSource source,string filename)
         {
             this.filename = filename;
             this.source = source;
+
             if (File.Exists(filename))
             {
                 try
                 {
-                    archive = new ZipArchive(File.Open(filename, FileMode.Open), ZipArchiveMode.Read);
+                    stream = File.Open(filename, FileMode.Open);
+                    archive = new ZipArchive(stream, ZipArchiveMode.Read);
                 }
                 catch (Exception e)
                 {
                     archive = null;
+                    if (stream != null) stream.Close();
+                    stream = null;
                 }
             }
         }
 
         public void Dispose()
         {
-            if (archive != null) archive.Dispose();
-            try
+            lock (ziplock)
             {
-                archive = new ZipArchive(File.Open(filename, FileMode.Open), ZipArchiveMode.Read);
-            }
-            catch (Exception e)
-            {
+                if (archive != null) archive.Dispose();
                 archive = null;
             }
+            if (stream != null) stream.Close();
+            stream = null;
 
         }
 
-        public class TextCacheFile : IIndexDirectDocument
+        public class TextCacheFile : IIndexDirectDocument, IEnumerator<IndexPage>
         {
             public TextCacheFile(string fname, IndexTextCacheDataSource parent)
             {
@@ -408,9 +426,9 @@ namespace Docodo
                 // create when enumerating
                 Name = doc.Name;
                 this.parent = parent;
-                this.doc = doc;
+                this.doc = doc.GetEnumerator();
             }
-            private IIndexDocument doc;
+            private IEnumerator<IndexPage> doc;
             public IndexTextCacheDataSource parent { get; private set; }
             public string Name { get; private set; }
             
@@ -422,11 +440,14 @@ namespace Docodo
             {
                 get
                 {
-                    ZipArchiveEntry entry = parent.archive.GetEntry(Name + "{" + id + "}");
-                    if (entry != null)
+                    lock (parent.ziplock)
                     {
-                        StreamReader reader = new StreamReader(entry.Open());
-                        return new IndexPage(id,reader.ReadToEnd());
+                        ZipArchiveEntry entry = parent.archive.GetEntry(Name + "{" + id + "}");
+                        if (entry != null)
+                        {
+                            StreamReader reader = new StreamReader(entry.Open());
+                            return new IndexPage(id, reader.ReadToEnd());
+                        }
                     }
                     return new IndexPage(id, "");
                 }
@@ -440,13 +461,15 @@ namespace Docodo
                 if (doc.MoveNext())
                 {
                     IndexPage _current = doc.Current;
-                    ZipArchiveEntry entry = parent.archive.CreateEntry(Name + "{" + _current.id + "}");
-                    using (StreamWriter wr = new StreamWriter(entry.Open()))
+                    lock (parent.ziplock)
                     {
-                        wr.Write(_current.text);
-                        wr.Close();
+                        ZipArchiveEntry entry = parent.archive.CreateEntry(Name + "{" + _current.id + "}");
+                        using (StreamWriter wr = new StreamWriter(entry.Open()))
+                        {
+                            wr.Write(_current.text);
+                            wr.Close();
+                        }
                     }
-
                     return (true);
                 }
                 else return false;
@@ -471,33 +494,32 @@ namespace Docodo
             }
         }
 
-        TextCacheFile _current;
-
-        public IEnumerator<IIndexDocument> GetEnumerator()
-        {
-            Reset();
-
-            enumerator = source.GetEnumerator();
-            return (this);
-        }
-
-        object IEnumerator.Current => Current;
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-           (source as IEnumerable).GetEnumerator();
-            return (this);
-        }
-
-        public IIndexDirectDocument this[string filename]
+        public IIndexDirectDocument this[string file]
         {
             get
             {
+                if ((File.Exists(filename)) && (archive==null))
+                {
+                    try
+                    {
+                        stream = File.Open(filename, FileMode.Open);
+                        archive = new ZipArchive(stream, ZipArchiveMode.Read);
+                    }
+                    catch (Exception e)
+                    {
+                        archive = null;
+                        if (stream != null) stream.Close();
+                        stream = null;
+                    }
+                }
+
                 // filename is relative
-                return new TextCacheFile(filename, this);
+                if (archive!=null)
+                 return new TextCacheFile(file, this);
+                return null;
             }
         }
-
+        /*
         public IIndexDocument Current
         { get {
                 return _current;
@@ -521,15 +543,308 @@ namespace Docodo
 
 
         }
+        */
+        object ziplock = new object();
+
+        public IIndexDocument Next(bool wait = true)
+        {
+            IIndexDocument doc = source.Next(wait);
+            if (doc != null)
+            {
+                lock (ziplock)
+                {
+                    return (new TextCacheFile(doc, this));
+                }
+                
+            }
+
+            return null;
+        }
 
         public void Reset()
         {
             if (source!=null) source.Reset();
-            if (archive != null) archive.Dispose();
+            //if (archive != null) archive.Dispose();
+            if (stream != null) stream.Close();
             File.Delete(filename);
-            archive = new ZipArchive(File.Open(filename, FileMode.OpenOrCreate), ZipArchiveMode.Update);
-
+            stream = File.Open(filename, FileMode.OpenOrCreate);
+            archive = new ZipArchive(stream, ZipArchiveMode.Update);
         }
 
     }
+
+    public class DocumentsDataSource: IndexTextFilesDataSource
+    {
+        public DocumentsDataSource(string Name,string path): base(Name,path,"*.pdf;*.txt",1251)
+        {
+            
+        }
+
+        public class IndexPDFDocument : IndexedTextFile
+        {
+            private PdfReader pdfReader = null;
+            int npage = -1;
+            string text = "";
+            public IndexPDFDocument(string fname, IndexTextFilesDataSource parent) : base(fname, parent)
+            {
+                pdfReader  = new PdfReader(fname);
+
+            }
+            public IndexPDFDocument(string fname, Stream data, IndexTextFilesDataSource parent) : base(fname, parent)
+            {
+                pdfReader = new PdfReader(data);
+
+            }
+
+            override public bool MoveNext() 
+            {
+                if (npage < pdfReader.NumberOfPages-1)
+                {
+                    var result = new StringBuilder();
+                    npage++;
+
+                    ITextExtractionStrategy strategy = new SimpleTextExtractionStrategy();
+                    string currentText = PdfTextExtractor.GetTextFromPage(pdfReader, npage+1, strategy);
+                    currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));
+                    _current = new IndexPage(""+npage,currentText);
+                    return true;
+                }
+                else return (false);
+
+            }
+
+            public override void Reset()
+            {
+                base.Reset();
+                npage = -1;
+            }
+
+            public override void Dispose()
+            {
+                pdfReader.Close();
+                pdfReader.Dispose();
+            }
+
+        }
+
+
+
+        override public IIndexDocument Next(bool wait) 
+        {
+            IndexedTextFile file = (IndexedTextFile)base.Next(wait);
+
+            if (file != null)
+            {
+                if (file.Name.ToLower().EndsWith(".pdf"))
+                {
+                    // PDF
+                    return new IndexPDFDocument(file.fname,this);
+
+                }
+            }
+
+            return (file);
+
+        }
+    }
+
+    public class WebDataSource : IndexTextFilesDataSource
+    {
+        //public string Name { get; }
+        HashSet<string> urlsAdded = new HashSet<string>();
+        ConcurrentQueue<string> urlsToDo = new ConcurrentQueue<string>();
+        CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+        //string baseurl { get; }
+        private bool Navigating;
+        public WebDataSource(string name,string url):base(name,url)
+        {
+            Name = name;
+            path = new UriBuilder(url.Substring(0,url.LastIndexOf("/"))).ToString();
+        }
+
+
+        public override void Reset()
+        {
+            cancellationTokenSource.Cancel();
+            cancellationTokenSource = new CancellationTokenSource();
+            urlsAdded.Clear();
+            urlsToDo.Clear();
+            if (!Navigating)
+            {
+                Task.Factory.StartNew(() => { Navigating = true; Console.WriteLine($"Start web crawler from {path}"); TryAddUrl("/"); Navigate(path + "/"); Navigating = false; }, cancellationTokenSource.Token);
+            }
+        }
+
+        void Navigate(string url)
+        {
+            var web = new HtmlWeb();
+            web.UserAgent = "DOCODO";
+            web.UsingCache = false;
+            web.PreRequest += new HtmlWeb.PreRequestHandler((req) => {
+                req.Headers.Add("accept", "text/html, text/plain");
+                
+                return true; });
+            //web.PostResponse += new HtmlWeb.PostResponseHandler((req, resp) => {
+            //});
+            HtmlDocument html = web.Load(url);
+            var nodes = html.DocumentNode.SelectNodes("//meta");
+            if (nodes!=null)
+            foreach (var node in nodes)
+            {
+                try
+                {
+                    if (node.Attributes["http-equiv"].Value.ToLower().Equals("refresh"))
+                    {
+                        var matches = Regex.Match(node.Attributes["content"].Value, @"url=([\w\.\\_\+\?\&]+)"); 
+                        //string[] arr = node.Attributes["content"].Value.Split(';');
+                        string s =TryAddUrl(matches.Groups[1].Value);
+                            if (s != null)
+                                Navigate(s);
+                        }
+                }
+                catch (Exception e) { }
+            }
+            
+            nodes = html.DocumentNode.SelectNodes("//a");
+            if (nodes!=null)
+            foreach (var node in nodes)
+            {
+                if (node.Attributes.Contains("href"))
+                {
+                    string s = TryAddUrl(node.Attributes["href"].Value);
+                    if (s!=null)
+                        Navigate(s);
+                }
+            }
+
+
+        }
+
+        private string TryAddUrl(string url)
+        {
+            string s = url.ToLower();
+            if (s.Length == 0) return (null);
+            if (s[0] == '#') return (null);
+
+            if (!s.ToLower().StartsWith("http:"))
+                s = path + (s.StartsWith('/')?"":"/")+ s;
+
+            s = new UriBuilder(s).ToString();
+            if (s.Length >= 4)
+            {
+                string ext = s.ToLower().Substring(s.Length - 4);
+                if ((ext.Equals(".png")) || (ext.Equals(".svg")) || (ext.Equals(".jpg")) || (ext.Equals(".bmp")) || (ext.Equals(".gif")))
+                    s = "";
+            }
+
+            if ((s.Length > 0) && (s.ToLower().StartsWith(path.ToLower())))
+            {
+                if (s.Length > 1024)
+                    return null;
+
+                if (!urlsAdded.Contains(s))
+                {
+                    urlsToDo.Enqueue(s);
+                    urlsAdded.Add(s);
+                    Console.WriteLine($"Parse url: {s}");
+                    return (s);
+                }
+
+            }
+            return (null);
+        }
+        override public IIndexDocument Next(bool bwait)
+        {
+            string str="";
+            IIndexDocument ret = null;
+            do
+            {
+                if (!urlsToDo.TryDequeue(out str))
+                {
+                    // Console.WriteLine($"TryDequee returns false {Navigating}, {urlsToDo.Count}");
+                    if (bwait && Navigating)
+                    {
+                        while (Navigating)
+                        {
+                            if (urlsToDo.TryDequeue(out str)) break;
+                            Thread.Sleep(100);
+                        }
+                    }
+
+                }
+
+                //Console.WriteLine($"TryDequee returns true {Navigating}, {urlsToDo.Count}");
+
+                if (str == null) break; // nothing more or don't wait
+
+                if ((str != null) && (str.Length > path.Length))
+                {
+                     HttpWebRequest req = HttpWebRequest.CreateHttp(str);
+                     req.UserAgent = "DOCODO";
+                     req.Accept = "text/html, text/plain, application/pdf";
+                     req.Method = "GET";
+                     WebResponse res;
+                     try
+                     {
+                       res = req.GetResponse();
+                     }
+                     catch (WebException e)
+                     {
+                        continue;
+                     }
+
+                    /*using () */
+                    {
+                        if (res.ContentType.ToLower().Equals("application/pdf"))
+                        {
+                            ret = new DocumentsDataSource.IndexPDFDocument(str, res.GetResponseStream(), this);
+                        }
+                        else
+                        {
+                            HtmlDocument html = new HtmlDocument();
+                            html.Load(res.GetResponseStream());
+                            StringBuilder builder = new StringBuilder();
+                            foreach (var node in html.DocumentNode.DescendantsAndSelf())
+                            {
+                                try
+                                {
+                                    if ((node.NodeType == HtmlNodeType.Text) && (!node.ParentNode.Name.Equals("script")) && (!node.ParentNode.Name.Equals("style")))
+                                        builder.Append(node.InnerText + " ");
+                                    else
+                                      if (node.Name.Equals("img"))
+                                    {
+                                        builder.Append(node.Attributes["alt"].Value + " ");
+                                    }
+                                }
+                                catch (Exception e) { }
+
+                            }
+                            // rectify text
+
+                            string rstr = builder.ToString().Trim(new char[] { '\r', '\n', ' ' });
+                            rstr = Regex.Replace(rstr, @"([ ]*[\n\r]+[ ]*)+", "\r\n");
+
+                            if (rstr.Length > 0)
+                                ret = new IndexOnePageTextFile(str.Substring(path.Length), rstr);
+                        }
+                    }
+                }
+
+            }
+            while (ret == null);
+
+           return ret;
+        }
+
+        override public void Dispose()
+        {
+            cancellationTokenSource.Cancel();
+            urlsAdded.Clear();
+            urlsToDo.Clear();
+            Navigating = false;
+
+        }
+    }
+
+
 }

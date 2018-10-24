@@ -10,6 +10,8 @@ using DynamicExpresso;
 using System.Text;
 using Iveonik.Stemmers;
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
 
 namespace Docodo
 {
@@ -150,7 +152,7 @@ namespace Docodo
 
     class Index<TString> : SortedList<TString, IndexSequence> where TString : IIndexString, new()
     {
-        const int MAX_DEF_TMP_INDEXITEMS = 100000; // Maximum items in tempindex
+        const int MAX_DEF_TMP_INDEXITEMS = 1000000; // Maximum items in tempindex
         const int MAX_WORD_LENGTH = 32;      // Maximum word length
         const long MAX_FILE_SIZE = 200000000; // Maximum indexable text file size
         const int COORD_DEVIDER = 1; // devider of coordinates in index
@@ -164,11 +166,15 @@ namespace Docodo
          *   InMemory - if true load into memmory, else on disk         
          *   stemmer - stemmer function to extract word base 
          */
+         public IndexSequence GetTest(ulong i)
+         {
+            return new IndexSequence((new ulong[] { i }));
+         }
 
         public Index(string path, bool InMemory, Vocab []vocs=null, Func<string, string> stemmer = null) : base()
         {
-
-            po.MaxDegreeOfParallelism = 4;
+          
+            MaxDegreeOfParallelism = 2;
             MaxTmpIndexItems = MAX_DEF_TMP_INDEXITEMS;
             WorkPath = path;
             if (path.Length > 0)
@@ -326,6 +332,12 @@ namespace Docodo
 
         public SearchResult Search(string req, SearchOptions opt=null)
         {
+
+            //using System.Linq.Dynamic, 
+//            Expression expr = System.Linq.Dynamic.DynamicExpression.Parse(typeof(IndexSequence), "GetTest(1) * GetTest(2)", null);
+//            LambdaExpression e = Expression.Lambda(expr);
+//            IndexSequence tst = ((Func<IndexSequence>)e.Compile())();
+
             try
             {
                 lock (DoSearchLock) // wait antil can search
@@ -334,6 +346,19 @@ namespace Docodo
                     var interpreter = new Interpreter();
 
                     req = req.ToLower();
+
+                    // search filter
+                    List<string> filter = new List<string>();
+                    var matches = Regex.Match(req, @"\B-filter:([\w\*\?\\.()+{}/]+,?)+");
+                    if (matches.Groups.Count > 1) {
+                        foreach (var cap in matches.Groups[1].Captures)
+                        {
+                            
+                            filter.Add(cap.ToString().Trim(','));
+                        }
+                    }
+                    req = Regex.Replace(req, @"\B-filter:([\w\*\?\\.()+{}/]+,?)+", " ");
+
                     req = Regex.Replace(req, @"\b\w{1,2}\b", " ");
                     req = Regex.Replace(req, @"\b(^\w|[()])+\b", " ");
                     req = Regex.Replace(req, @"\b(\w+)\b", "Get(\"${0}\") * ");
@@ -369,9 +394,16 @@ namespace Docodo
                                 result.foundPages.Add(lastResultDocPage);
                                 if (prevd != _p.doc)
                                 {
-                                    ResultDocument doc = new ResultDocument(_p.doc);
-                                    result.foundDocs.Add(doc);
-                                    lastDoc = doc;
+                                   ResultDocument doc = new ResultDocument(_p.doc);
+                                    // check filter
+                                    bool matched =  filter.Count==0;
+                                    foreach (string filt in filter)
+                                    {
+                                        if (Regex.Match(doc.Name, filt).Success) { matched = true; break; }
+                                    }
+                                    if (matched)
+                                     result.foundDocs.Add(doc);
+                                   lastDoc = doc;
                                 }
                                 lastResultDocPage.doc = lastDoc;
                                 lastDoc.pages.Add(lastResultDocPage);
@@ -393,16 +425,20 @@ namespace Docodo
                                     if ((source!=null) && (source is IIndexDirectDataSource))
                                     {
                                         IIndexDirectDocument document = (source as IIndexDirectDataSource)[doc.Name.Substring(doc.Name.Split(':')[0].Length + 1)];
-                                        foreach (var page in doc.pages)
+                                        if (document != null)
                                         {
-                                           string text =  document[page.id].text;
-                                            int[] Range = { 0, 0 };
-                                            Range[0] = Math.Min(Math.Max(0,page.pos.Min()-64), text.Length);
-                                            Range[1] = Math.Min(Math.Min(page.pos.Max()+64,text.Length),Range[0]+256);
+                                            foreach (var page in doc.pages)
+                                            {
+                                                string text = document[page.id].text;
+                                                int[] Range = { 0, 0 };
+                                                Range[0] = Math.Min(Math.Max(0, page.pos.Min() - 64), text.Length);
+                                                Range[1] = Math.Min(Math.Min(page.pos.Max() + 64, text.Length), Range[0] + 256);
 
-                                            page.text = PreparePageText(text.Substring(Range[0], Range[1] - Range[0]));
+                                                page.text = PreparePageText(text.Substring(Range[0], Range[1] - Range[0]));
 
 
+                                            }
+                                            document.Dispose();
                                         }
                                     }
                                     break;
@@ -513,7 +549,7 @@ namespace Docodo
 
         private ParallelOptions po = new ParallelOptions();
         public CancellationTokenSource cancel { get; private set; }
-        public int MaxDegreeOfParallelism => po.MaxDegreeOfParallelism;
+        public int MaxDegreeOfParallelism { get => po.MaxDegreeOfParallelism; set => po.MaxDegreeOfParallelism = value; }
 
         public enum Status
         {
@@ -566,14 +602,21 @@ namespace Docodo
 
 
                         foreach (IIndexDataSource source in sources)
-                            tasks.Add(Task.Factory.StartNew(() => { IndexTask(source); }, po.CancellationToken));
+                        {
+                            source.Reset();
+                            for (int q = 0; q < Math.Max(1,MaxDegreeOfParallelism); q++)
+                                tasks.Add(Task.Factory.StartNew(() => { IndexTask(source); }, po.CancellationToken));
+                        }
 
                         status = Status.Index;
                         Task.WaitAll(tasks.ToArray(), po.CancellationToken);
                         Console.WriteLine("Index finished");
 
-                    // Next parallel Merge 
-                    status = Status.Merge;
+                        foreach (IIndexDataSource source in sources)
+                            source.Dispose();
+
+                            // Next parallel Merge 
+                            status = Status.Merge;
                         foreach (string dir in Directory.GetDirectories(WorkPath))
                             MergeAll(dir);
                     // Overall Merge
@@ -620,7 +663,7 @@ namespace Docodo
                     files = Directory.GetFiles(Path, "*.tmpind");
                     if (files.Length > 1)
                     {
-                        int nMax = 2;
+                        int nMax = 5;
                         for (int q = 0; q < files.Length - 1; q += nMax)
                         {
                             string[] newfiles = new string[Math.Min(nMax, files.Length - q)];
@@ -772,15 +815,15 @@ namespace Docodo
             // merge lists
             try
             {
-                int[] shifts = new int[files.Length];
+                ulong[] shifts = new ulong[files.Length];
                 shifts[0] = 0;
                 //            Dictionary<string, int> result = new Dictionary<string, int>();
-
-                for (int q = 0, m = 0; q < files.Length; q++)
+                ulong m = 0;
+                for (int q = 0; q < files.Length; q++)
                 {
                     if (q > 0) shifts[q] = shifts[q - 1] + m;
                     BinaryReader bin = new BinaryReader(File.OpenRead(files[q]));
-                    m = bin.ReadInt32();
+                    m = bin.ReadUInt64();
                     bin.Close();
 
                     BinaryFormatter binf = new BinaryFormatter();
@@ -801,7 +844,7 @@ namespace Docodo
                         }
                         else
                         {
-                            PagesList.Add(d.Value, new DocPage(doc, d.Key.Substring(1)));
+                            PagesList.Add(d.Value+shifts[q], new DocPage(doc, d.Key.Substring(1)));
                         }
 
 
@@ -960,8 +1003,6 @@ namespace Docodo
 
         /* Thread Safe temporary index class */
         /* Temporary indexes then merged into final index */
-
-
         class TempIndex : SortedList<TString, List<uint>>
         {
             public int nTmpIndex = 0;
@@ -1038,6 +1079,10 @@ namespace Docodo
 
         public Func<String, string> Stemm = null;
 
+
+
+        //private BlockingCollection<uint> nextCoord;
+
         private void IndexTask(IIndexDataSource source)
         {
            
@@ -1055,12 +1100,21 @@ namespace Docodo
 
                 
                 uint coord = 0;
-                foreach (IIndexDocument doc in source)
+                do
                 {
+           //         Console.WriteLine($"Task {Task.CurrentId} waiting coord");
+               //     coord = nextCoord.Take(cancel.Token);
+             //       Console.WriteLine($"Task {Task.CurrentId} get coord {coord}");
+
+                 //   if (cancel.Token.IsCancellationRequested) break;
+
+                    IIndexDocument doc = source.Next();
+
+                    if (doc == null) break;
 
                     Console.WriteLine("ID:{0} <-{1}", Task.CurrentId, doc.Name);
                     // TODO: File must fit RAM
-                    files.Add(new KeyValuePair<string, ulong>(source.Name+":"+doc.Name, index.maxCoord));
+                    files.Add(new KeyValuePair<string, ulong>(source.Name + ":" + doc.Name, index.maxCoord));
 
                     foreach (IndexPage page in doc)
                     {
@@ -1069,11 +1123,11 @@ namespace Docodo
                             String c = page.text.ToLower(); //File.ReadAllText(file);
                             if (c.Length == 0) continue;
                             //foreach (string ss in System.Text.RegularExpressions.Regex.Split(c, "\\b"))
-                            string ss="";
-                            ss+=c[0];
+                            string ss = "";
+                            ss += c[0];
                             for (int qq = 1; qq < c.Length; qq++)
                             {
-                                if ((qq == c.Length-1) || (IsLetter(c[qq]) != IsLetter(c[qq - 1])))
+                                if ((qq == c.Length - 1) || (IsLetter(c[qq]) != IsLetter(c[qq - 1])))
                                 {
                                     // end of group
 
@@ -1083,10 +1137,10 @@ namespace Docodo
                                         {
                                             uint d = 0;
                                             string stemmed = ss;
-                                            if (Stemm != null) 
-                                                {
-                                                 stemmed = Stemm(ss);
-                                                }
+                                            if (Stemm != null)
+                                            {
+                                                stemmed = Stemm(ss);
+                                            }
 
                                             int nG = 0;
                                             int nVoc = 0;
@@ -1101,16 +1155,16 @@ namespace Docodo
                                                     //else
                                                     {
                                                         TString str = (new TString());
-                                                        str.FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK) );
+                                                        str.FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
                                                         index.Add(str, coord + (uint)qq);
-                                                        if ((bKeepForms) && (stemmed.Length<ss.Length))
+                                                        if ((bKeepForms) && (stemmed.Length < ss.Length))
                                                         { // reminder
                                                             str = new TString();
                                                             if (ss.Length - stemmed.Length <= 2)
                                                                 str.FromString("$" + ss[0] + ":" + ss.Substring(stemmed.Length));
                                                             else
                                                                 str.FromString("$" + ss.Substring(stemmed.Length));
-                                                            index.Add(str, coord + (uint)qq+1);
+                                                            index.Add(str, coord + (uint)qq + 1);
 
                                                         }
                                                     }
@@ -1120,7 +1174,7 @@ namespace Docodo
                                                 nVoc++;
                                             }
 
-                                            if (nG==0) 
+                                            if (nG == 0)
                                             {
                                                 string news = "<" + ss + ">";
                                                 for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
@@ -1136,16 +1190,22 @@ namespace Docodo
                                 }
                                 ss += c[qq];
                             }
-                            coord += (uint) c.Length;
+                            coord += (uint)c.Length;
                             files.Add(new KeyValuePair<string, ulong>(":" + page.id, coord));
+                   //         nextCoord.Add(coord,cancel.Token);
+                     //       Console.WriteLine($"Task {Task.CurrentId} pushed next coord {coord}");
+                            
                         }
                         catch (Exception e)
-                        {
+                        { 
                             Console.WriteLine("Error parsing file {0}: {1}", doc.Name, e.Message);
                         }
 
                     }
+
+                    doc.Dispose();
                 }
+                while (true);
 
                 index.Save();
 
