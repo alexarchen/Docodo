@@ -9,19 +9,21 @@ using System.Linq;
 namespace Docodo
 {
 
-    /* Base class for loaded vocabulary */
+    /* Base class for loaded vocabulary, thread safe */
     public class Vocab : Dictionary<string, int>
     {
         public const int GROUP_NOT_EXCACT_WORD_MASK = 0x01000000; // mask for bit in group number to skip the word if it's excact the same as its stemm
         public const int GROUP_NUMBER_MASK = 0xFFFFFF;
 
-        public char[] Range = { 'a', 'z' }; // letters range of this vocab
+        public char[] Range { get; } = { 'a', 'z' }; // letters range of this vocab
+        public void SetRange(char a,char b) { Range[0] = a; Range[1] = b; }
         public IStemmer stemmer;
         public Vocab(IStemmer s = null)
         {
             stemmer = s;
         }
-        public string Stem(string s) { if (stemmer != null) return (stemmer.Stem(s)); return s; }
+        object stemmlocker = new object(); // ensure thread safe stemmer call
+        public string Stem(string s) { lock (stemmlocker) { if (stemmer != null) return (stemmer.Stem(s)); } return s; }
         public void Load(string fname)
         {
             BinaryReader r = new BinaryReader(File.OpenRead(fname));

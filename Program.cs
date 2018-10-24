@@ -58,12 +58,22 @@ namespace Docodo
             public string suff;
         }
 
-        
 
+        static public Index ind; // Global index
+        
         static void Main(string[] args)
         {
-   
+            Console.Write("DOCODO Search Engine\nCopyright (c) Alexey Zakharchenko\n");
+            int nPort = 9001;
+            try
+            {
+                nPort = Int32.Parse((from a in args where a.StartsWith("-p:") select a).Last().Substring(3));
+            }
+            catch (Exception e) { }
 
+            new DocodoServer(nPort);
+
+            //Json.JsonParser.Deserialize( parser = new Json.JsonParser();
             Console.WriteLine("Checking vocs...");
             if (!File.Exists("Dict\\ru.voc"))
             {
@@ -75,31 +85,17 @@ namespace Docodo
                 Console.WriteLine("Creating english voc (wait a minute)...");
                 FreeLibVocBuilder.CreateFromFolder("Dict\\en", "Dict\\en.voc");
             }
-
-            Vocab[] vocs = { new Vocab(), new Vocab() };
-            vocs[0].Load("Dict\\en.voc");
-            vocs[1].Load("Dict\\ru.voc");
-
-
+            
             RussianStemmer rus = new RussianStemmer();
             EnglishStemmer eng = new EnglishStemmer();
 
-            object stemmlocker = new object();
-            Func<string, string> stemm = (s) =>
-             {
-                 lock (stemmlocker)
-                 {
-                     if (s.Length <= 1) return s;
-                     if (s[0] < 'z') // english
-                         return (eng.Stem(s));
-                     else
-                         return (rus.Stem(s));
-                 }
-             };
+            Vocab[] vocs = { new Vocab(eng), new Vocab(rus) };
+            vocs[0].Load("Dict\\en.voc");
+            vocs[1].Load("Dict\\ru.voc");
 
-            String path = "d:\\temp\\bse";
+            String path = "d:\\temp\\bse\\test";
             
-            Index ind = new Index("d:\\temp\\index", false, vocs, stemm);
+            ind = new Index("d:\\temp\\index", false, vocs);
 
             //ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
             //ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));

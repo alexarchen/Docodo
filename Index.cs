@@ -131,7 +131,7 @@ namespace Docodo
         {
             if (word.Length <= 2) return (new IndexSequence(/* Empty */));
             string stemmed = word;
-            if (Stemm != null) stemmed  = Stemm(word);
+            
 
             IndexSequence res=null;
             try
@@ -140,8 +140,10 @@ namespace Docodo
                 int nVoc = 0;
                 foreach (Vocab voc in vocs)
                 {
-                    if ((voc != null) && (stemmed[0] >= voc.Range[0]) && (stemmed[0] <= voc.Range[1]))
+                    // TODO: detect prefered language
+                    if ((voc != null) && (word[0] >= voc.Range[0]) && (word[0] <= voc.Range[1]))
                     {
+                        stemmed = voc.Stem(word);
                         nG = voc.Search(stemmed);
                         if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(word))) nG = 0;
                         if (nG != 0) break;

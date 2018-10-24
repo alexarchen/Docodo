@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
+
 namespace Docodo
 {
     public struct IndexPage
@@ -58,7 +59,7 @@ namespace Docodo
 
 
     /* Implementation */
-
+    /*
     public class Windows1251 : EncodingProvider
     {
         public static Encoding GetEncoding()
@@ -141,7 +142,8 @@ namespace Docodo
         }
 
     }
-    
+    */
+
     /* Class to simply represent text document for DOCODO index */
     public class IndexOnePageTextFile: IIndexDocument
     {
@@ -180,6 +182,7 @@ namespace Docodo
         /* Name - unique name, path - folder with txt files, mod - modificator, EncodePage - code page number */
         public IndexTextFilesDataSource(string Name, string path,string mod="*.txt",int EncodePage=1252)
         {
+            
             cts = new CancellationTokenSource();
             this.path = path;
             this.Name = Name;
@@ -272,7 +275,12 @@ namespace Docodo
                 get
                 {
                     char[] buff = new char[PAGE_SIZE];
-                    if (sr==null) sr = new StreamReader(fname, new Windows1251().GetEncoding(1251));
+                    if (sr == null) {
+                        sr = GetStreamReader(fname);
+                    }
+
+
+
                     if (sr != null)
                     {
                         sr.BaseStream.Seek(Int32.Parse(id) * PAGE_SIZE, SeekOrigin.Begin);
@@ -288,9 +296,33 @@ namespace Docodo
             }
             object IEnumerator.Current => Current;
 
+            StreamReader GetStreamReader(string fname)
+            {
+                BinaryReader reader = new BinaryReader(File.OpenRead(fname));
+                byte[] bytes = reader.ReadBytes(5000);
+                /* https://github.com/errepi/ude/tree/master/src/Library */
+                Ude.CharsetDetector detector = new Ude.CharsetDetector();
+                detector.Feed(bytes, 0, 5000);
+                detector.DataEnd();
+                reader.Close();
+                if (detector.Charset != null)
+                {
+                    try
+                    {
+                        return (new StreamReader(fname, Portable.Text.Encoding.GetEncoding(detector.Charset)));
+                    }
+                    catch (Exception e)
+                    {
+
+                    }
+                }
+               return new StreamReader(fname, true);
+
+            }
+
             virtual public bool MoveNext() { npage++; 
                 char[] buff = new char[PAGE_SIZE];
-                if (sr == null) sr = new StreamReader(fname, new Windows1251().GetEncoding(1251));
+                if (sr == null) sr = GetStreamReader(fname);
                 int iread = sr.Read(buff, 0, PAGE_SIZE);
                 if (iread > 0)
                 {

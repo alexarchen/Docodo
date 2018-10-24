@@ -4,17 +4,54 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.1</TargetFramework>
     <ApplicationIcon />
-    <StartupObject />
+    <StartupObject>Docodo.Program</StartupObject>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Authors>Alex Archen</Authors>
+    <Description>DOCODO full-text powerful search engine.
+- High indexing speed
+- Supports different sources: files, http, DB
+- Supports different languages, can add othes
+- Multithreaded
+- Scalable
+</Description>
+    <PackageId>DOCODO</PackageId>
+    <PackageLicenseUrl>http://www.gnu.org/licenses/gpl.txt</PackageLicenseUrl>
+    <PackageProjectUrl>https://github.com/alexarchen/Docodo</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
+    <RepositoryType>GitHub</RepositoryType>
+    <PackageTags>search engine index full text</PackageTags>
+    <PackageReleaseNotes>alpha version</PackageReleaseNotes>
+    <Version>0.0.5</Version>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Configurations>Debug;Release;Linux</Configurations>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Linux|AnyCPU'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Linux|x64'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.8.9" />
     <PackageReference Include="iTextSharp" Version="5.5.13" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="Portable.Text.Encoding" Version="0.8.3" />
     <PackageReference Include="StemmersNet" Version="1.1.1" />
     <PackageReference Include="System.Text.Encoding" Version="4.3.0" />
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="4.5.0" />
-    <PackageReference Include="System.Text.Encoding.Extensions" Version="4.3.0" />
+    <PackageReference Include="Ude.NET" Version="1.0.0" />
   </ItemGroup>
 
 </Project>
