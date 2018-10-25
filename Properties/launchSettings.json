@@ -2,6 +2,7 @@
   "profiles": {
     "Docodo": {
       "commandName": "Project",
+      "commandLineArgs": "server",
       "workingDirectory": ".\\"
     }
   }

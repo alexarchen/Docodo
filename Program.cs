@@ -1,4 +1,21 @@
-﻿using System;
+﻿//DOCODO Search Engine
+//Copyright(C) 2018  Alexey Zakharchenko
+// https://github.com/alexarchen/Docodo
+
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU General Public License
+//    along with this program.If not, see<https://www.gnu.org/licenses/>.
+
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
@@ -63,7 +80,7 @@ namespace Docodo
         
         static void Main(string[] args)
         {
-            Console.Write("DOCODO Search Engine\nCopyright (c) Alexey Zakharchenko\n");
+            Console.Write("DOCODO Search Engine\nCopyrigt (c) 2018 Alexey Zakharchenko \n");
             int nPort = 9001;
             try
             {
@@ -71,10 +88,22 @@ namespace Docodo
             }
             catch (Exception e) { }
 
-            new DocodoServer(nPort);
+            if (args.Contains("server"))
+             new DocodoServer(nPort);
 
             //Json.JsonParser.Deserialize( parser = new Json.JsonParser();
-            Console.WriteLine("Checking vocs...");
+            List<Vocab> vocs = new List<Vocab>();
+            //Dictionary<string, Type> stemmers = new Dictionary<string, Type>();
+            Console.Write("Loaded vocs: ");
+            foreach (string file in Directory.GetFiles("Dict\\", "*.voc"))
+            {
+                vocs.Add(new Vocab(file));
+                Console.Write(file.Substring(file.LastIndexOf("\\") + 1).Split('.')[0]+" ");
+            }
+            if (vocs.Count == 0) Console.Write("No!");
+            Console.Write("\n");
+            
+            // TODO: create voc command, like -cv:en
             if (!File.Exists("Dict\\ru.voc"))
             {
                 Console.WriteLine("Creating russian voc (wait a minute)...");
@@ -85,24 +114,22 @@ namespace Docodo
                 Console.WriteLine("Creating english voc (wait a minute)...");
                 FreeLibVocBuilder.CreateFromFolder("Dict\\en", "Dict\\en.voc");
             }
-            
-            RussianStemmer rus = new RussianStemmer();
-            EnglishStemmer eng = new EnglishStemmer();
-
-            Vocab[] vocs = { new Vocab(eng), new Vocab(rus) };
-            vocs[0].Load("Dict\\en.voc");
-            vocs[1].Load("Dict\\ru.voc");
 
             String path = "d:\\temp\\bse\\test";
+            String basepath = ".";// "d:\\temp\\index";
+            try
+            {
+                basepath = (from a in args where a.StartsWith("-i:") select a).Last().Substring(3);
+            }
+            catch (Exception e) { }
+            ind = new Index(basepath, false, vocs.ToArray<Vocab>());
             
-            ind = new Index("d:\\temp\\index", false, vocs);
-
             //ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
-            //ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
-                        ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
+            ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
+            //            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
             //            ind.AddDataSource(new IndexTextFilesDataSource("txt", path, "*.txt", 1251));
-            ind.bKeepForms = true;
-
+            //ind.bKeepForms = true;
+            //ind.MaxDegreeOfParallelism = 1; // for test
             cancelationToken = ind.cancel; // token to cancel something
 
             if (ind.CanSearch) Console.WriteLine("Index loaded, contains {0} words", ind.Count());
@@ -130,7 +157,7 @@ namespace Docodo
                         {
                             Console.WriteLine($"Doc: {d.Name}, Found {d.pages.Count} pages");
                             foreach (var p in d.pages) {
-                                Console.WriteLine($"  Page {p.id} ({p.number} times)");
+                                Console.WriteLine($"  Page {p.id} ({p.pos.Count} times)");
                                 Console.WriteLine("    Text: "+ p.text);
                             }
                         }

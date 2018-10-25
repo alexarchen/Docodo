@@ -7,7 +7,7 @@
     <StartupObject>Docodo.Program</StartupObject>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>Alex Archen</Authors>
-    <Description>DOCODO full-text powerful search engine.
+    <Description>DOCODO full-text powerful documental search engine.
 - High indexing speed
 - Supports different sources: files, http, DB
 - Supports different languages, can add othes
@@ -19,7 +19,7 @@
     <PackageProjectUrl>https://github.com/alexarchen/Docodo</PackageProjectUrl>
     <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
-    <PackageTags>search engine index full text</PackageTags>
+    <PackageTags>search engine document index full text</PackageTags>
     <PackageReleaseNotes>alpha version</PackageReleaseNotes>
     <Version>0.0.5</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>

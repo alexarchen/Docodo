@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Xml;
 using System.Linq;
-
+using System.Reflection;
 
 namespace Docodo
 {
@@ -21,6 +21,21 @@ namespace Docodo
         public Vocab(IStemmer s = null)
         {
             stemmer = s;
+        }
+        public Vocab(string filename)
+        {
+            
+            {
+                string lang = new FileInfo(filename).Name.Split('.')[0];
+                Type stemtype = (from el in Index.Stemmers where el.lang.Equals(lang) select el.type).First();
+                if (stemtype != null)
+                {
+                    ConstructorInfo ctor = stemtype.GetConstructor(new Type[] { });
+                    stemmer = (IStemmer)ctor.Invoke(new object[] { });
+                }
+            }
+            
+            
         }
         object stemmlocker = new object(); // ensure thread safe stemmer call
         public string Stem(string s) { lock (stemmlocker) { if (stemmer != null) return (stemmer.Stem(s)); } return s; }

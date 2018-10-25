@@ -16,10 +16,14 @@ GNU GPL 3
 Run application and follow instuctions
 You can create index and search from console
 
+```sh
+docodo [-i:<path>]
+```
+
 ## As REST server
 Run application 
 ```sh
-docodo [-p:<port>]
+docodo server [-p:<port>] [-i:<path>]
 ```
 and send search request
 ```sh
@@ -31,3 +35,20 @@ and receive pure JSON
 
 Install DOCODO.NET package
 
+```sh
+ Index index = new Index();
+ index.AddVocs(...);
+ // index whole c:\\ drive and store texts internally
+ index.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", "c:\\"), ind.WorkPath + "\\textcache.zip"));
+ if (index.CanSearch)
+ {
+  Index.SearchResult = index.Search("hello world");
+ }
+ else
+ {
+  // creating ...
+  Task ret = ind.Create();
+  ret.Wait();
+ }
+
+```

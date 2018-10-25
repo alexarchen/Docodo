@@ -114,9 +114,10 @@ namespace Docodo
             return (newSeq);
         }
         // combine results by |
-        public static IndexSequence operator |(IndexSequence seq1, IndexSequence seq2)
+        public static IndexSequence operator +(IndexSequence seq1, IndexSequence seq2)
         {
-            return (seq1);
+
+            return (seq2);
         }
     }
 }

@@ -144,15 +144,16 @@ namespace Docodo
     }
     */
 
-    /* Class to simply represent text document for DOCODO index */
-    public class IndexOnePageTextFile: IIndexDocument
+    /* Class to simply hold read paged text document for DOCODO index */
+    public class IndexPagedTextFile: IIndexDocument
     {
         private List<IndexPage> pages = new List<IndexPage>();
         public string Name { get; }
-        public IndexOnePageTextFile(string name,string text)
+        public IndexPagedTextFile(string name,string text,string headers)
         {
             Name = name;
-            pages.Add(new IndexPage("0", text));
+            pages.Add(new IndexPage("0", headers));
+            pages.Add(new IndexPage("1", text));
         }
         public IEnumerator<IndexPage> GetEnumerator()
         {
@@ -270,20 +271,25 @@ namespace Docodo
             {
                 get { return Current; }
             }
+            // page id is 1-based number 
             public IndexPage this[string id] 
             {
                 get
                 {
+                    
                     char[] buff = new char[PAGE_SIZE];
                     if (sr == null) {
                         sr = GetStreamReader(fname);
                     }
-
+                    
 
 
                     if (sr != null)
                     {
-                        sr.BaseStream.Seek(Int32.Parse(id) * PAGE_SIZE, SeekOrigin.Begin);
+                        int npage = Int32.Parse(id)-1;
+                        if ((npage<0) || (npage* PAGE_SIZE > sr.BaseStream.Length)) { throw new InvalidOperationException("Page number is out of range"); }
+
+                        sr.BaseStream.Seek(npage * PAGE_SIZE, SeekOrigin.Begin);
                         sr.DiscardBufferedData();
                         int iread;
                         if ((iread = sr.Read(buff, 0, PAGE_SIZE)) > 0)
@@ -319,17 +325,76 @@ namespace Docodo
                return new StreamReader(fname, true);
 
             }
-
-            virtual public bool MoveNext() { npage++; 
-                char[] buff = new char[PAGE_SIZE];
-                if (sr == null) sr = GetStreamReader(fname);
-                int iread = sr.Read(buff, 0, PAGE_SIZE);
-                if (iread > 0)
+            static private void AddHeadersFromDscrFile(string filename,ref Dictionary<string, string> dict)
+            {
+                if (File.Exists(filename))
                 {
-                    _current = new IndexPage("" + npage, new string(buff,0,iread));
-                }
-                else { return false; }
+                    try
+                    {
+                        StreamReader streamReader = new StreamReader(File.OpenRead(filename));
+                        while (true)
+                        {
+                            string line = streamReader.ReadLine();
+                            if (line == null) break;
+                            if (line.TrimStart(' ').StartsWith(';')) continue;
+                            dict.TryAdd(line.Split('=')[0], line.Split('=')[1].TrimEnd(new char[] { '\r','\n'}));
+                        }
+                    }
+                    catch (Exception e)
+                    {
 
+                    }
+                }
+            }
+
+            static public string GetHeadersFromDscrFile(string filename,string baseheaders)
+            {
+                Dictionary<string, string> headers = new Dictionary<string, string>();
+                try
+                {
+                    using (StringReader stringReader = new StringReader(baseheaders))
+                    {
+                        while (true)
+                        {
+                            string line = stringReader.ReadLine();
+                            if (line == null) break;
+                            headers.TryAdd(line.Split('=')[0], line.Split('=')[1]);
+                        }
+                    }
+                } catch (Exception e) { }
+
+                AddHeadersFromDscrFile(filename + ".dscr", ref headers);
+                DirectoryInfo dir = (new FileInfo(filename)).Directory;
+                do
+                {
+                    AddHeadersFromDscrFile(dir.FullName + "\\.dscr", ref headers);
+                    dir = dir.Parent;
+                }
+                while (dir!=null);
+
+                StringBuilder b = new StringBuilder();
+                foreach (string key in headers.Keys) b.Append($"{key}={headers[key]}\n");
+                return b.ToString();
+            }
+
+            virtual public bool MoveNext() { npage++;
+
+                if (npage == 0)
+                {
+                    // header page
+                    _current = new IndexPage("" + npage, GetHeadersFromDscrFile(fname, "Name=" + Name + "\n"));
+                }
+                else
+                {
+                    char[] buff = new char[PAGE_SIZE];
+                    if (sr == null) sr = GetStreamReader(fname);
+                    int iread = sr.Read(buff, 0, PAGE_SIZE);
+                    if (iread > 0)
+                    {
+                        _current = new IndexPage("" + npage, new string(buff, 0, iread));
+                    }
+                    else { return false; }
+                }
                 return (true);
             }
             virtual public void Reset() {
@@ -632,13 +697,25 @@ namespace Docodo
             {
                 if (npage < pdfReader.NumberOfPages-1)
                 {
-                    var result = new StringBuilder();
                     npage++;
-
-                    ITextExtractionStrategy strategy = new SimpleTextExtractionStrategy();
-                    string currentText = PdfTextExtractor.GetTextFromPage(pdfReader, npage+1, strategy);
-                    currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));
-                    _current = new IndexPage(""+npage,currentText);
+                    if (npage == 0)
+                    {
+                        // header page
+                        var result = new StringBuilder();
+                        if (pdfReader.Info.ContainsKey("Title"))
+                         result.Append("Title="+pdfReader.Info["Title"]+"\n");
+                        result.Append("Name=" + Name + "\n");
+                        if (pdfReader.Info.ContainsKey("Author"))
+                            result.Append("Author=" + pdfReader.Info["Author"] + "\n");
+                        _current = new IndexPage("" + npage, Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
+                    }
+                    else
+                    {
+                        ITextExtractionStrategy strategy = new SimpleTextExtractionStrategy();
+                        string currentText = PdfTextExtractor.GetTextFromPage(pdfReader, npage, strategy);
+                        currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));
+                        _current = new IndexPage("" + npage, currentText);
+                    }
                     return true;
                 }
                 else return (false);
@@ -836,6 +913,7 @@ namespace Docodo
                             HtmlDocument html = new HtmlDocument();
                             html.Load(res.GetResponseStream());
                             StringBuilder builder = new StringBuilder();
+                            
                             foreach (var node in html.DocumentNode.DescendantsAndSelf())
                             {
                                 try
@@ -856,8 +934,32 @@ namespace Docodo
                             string rstr = builder.ToString().Trim(new char[] { '\r', '\n', ' ' });
                             rstr = Regex.Replace(rstr, @"([ ]*[\n\r]+[ ]*)+", "\r\n");
 
+                            //                            rstr = Encoding.UTF8.GetString(Encoding.Convert(html.Encoding, Encoding.UTF8, currentText));
+
+
+
                             if (rstr.Length > 0)
-                                ret = new IndexOnePageTextFile(str.Substring(path.Length), rstr);
+                            {
+                                StringBuilder headers = new StringBuilder();
+                                string Author = "";
+                                string Title = "";
+                                var nodes = html.DocumentNode.SelectNodes("//title");
+                                if (nodes != null) Title = nodes[0].InnerText;
+                                nodes = html.DocumentNode.SelectNodes("//meta");
+                                if (nodes != null)
+                                {
+                                    foreach (var node in nodes)
+                                    {
+                                        if (node.Attributes.Contains("Author"))
+                                            Author = node.Attributes["Author"].Value;
+                                    }
+                                }
+                                headers.Append($"Name={Name}\n");
+                                if (Title.Length > 0) headers.Append($"Title={Title}\n");
+                                if (Author.Length > 0) headers.Append($"Author={Author}\n");
+
+                               ret = new IndexPagedTextFile(str.Substring(path.Length), rstr, headers.ToString());
+                            }
                         }
                     }
                 }
