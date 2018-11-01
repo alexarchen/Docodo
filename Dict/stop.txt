@@ -1,0 +1,10 @@
+;English
+and
+not
+but
+are
+;Russian
+или
+под
+над
+при

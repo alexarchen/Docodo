@@ -53,18 +53,18 @@ namespace Docodo
         const int MIN_WORD_LENGTH = 3;
         const float DOC_RANK_MULTIPLY = 10; // Rank multiplier when found in headers
 
-        /* Index constructor
-         *   path - working folder, if set it will load 
-         *            autmatically, else set WorkPath before call to Load or Create
-         *   InMemory - if true load into memmory, else on disk         
-         *   stemmer - stemmer function to extract word base 
-         */
         public IndexSequence GetTest(ulong i)
          {
             return new IndexSequence((new ulong[] { i }));
          }
 
-        public Index(string path=".", bool InMemory=false, Vocab []vocs=null) : base()
+        /* Index constructor
+         *   path - working folder, if set it will load 
+         *            autmatically, else set WorkPath before call to Load or Create
+         *   InMemory - if true load into memory, else on disk         
+         *   vocs - vocabs to use with index 
+         */
+        public Index(string path=".", bool InMemory=false, Vocab []vocs=null)
         {
           
             MaxDegreeOfParallelism = 2;
