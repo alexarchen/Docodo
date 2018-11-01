@@ -4,8 +4,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.1</TargetFramework>
     <ApplicationIcon />
-    <StartupObject>Docodo.Program</StartupObject>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <StartupObject></StartupObject>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <Authors>Alex Archen</Authors>
     <Description>DOCODO full-text powerful documental search engine.
 - High indexing speed
@@ -22,7 +22,7 @@
     <PackageTags>search engine document index full text</PackageTags>
     <PackageReleaseNotes>alpha version</PackageReleaseNotes>
     <Version>0.0.5</Version>
-    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Configurations>Debug;Release;Linux</Configurations>
     <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
@@ -44,14 +44,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
-    <PackageReference Include="HtmlAgilityPack" Version="1.8.9" />
-    <PackageReference Include="iTextSharp" Version="5.5.13" />
-    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
-    <PackageReference Include="Portable.Text.Encoding" Version="0.8.3" />
-    <PackageReference Include="StemmersNet" Version="1.1.1" />
-    <PackageReference Include="System.Text.Encoding" Version="4.3.0" />
-    <PackageReference Include="Ude.NET" Version="1.0.0" />
+    <Compile Remove="Docodo.NET\**" />
+    <EmbeddedResource Remove="Docodo.NET\**" />
+    <None Remove="Docodo.NET\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Docodo.NET\Docodo.NET.csproj" />
   </ItemGroup>
 
 </Project>

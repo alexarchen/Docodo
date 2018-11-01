@@ -17,38 +17,24 @@ Run application and follow instuctions
 You can create index and search from console
 
 ```sh
-docodo [-i:<path>]
+docodo [-i:<path>] [-source:<source1>] [-source:<source2>] ...
 ```
+where <path> - path to the index files, 
+<source..> - documents source description in a form <type>,<source_path>
+ where <type> is one of doc|web|mysql,
+ <source_path> path to the documents folder when type=doc, 
+ url of web server when type=web and pass to the query file is type=mysql
+ 
 
 ## As REST server
 Run application 
 ```sh
-docodo server [-p:<port>] [-i:<path>]
+docodo server [-p:<port>] ...
 ```
-and send search request
+send search request
+
 ```sh
 127.0.0.1:<port>/search?req=<request>[&params]
 ```
 and receive pure JSON
 
-## Us .NET library
-
-Install DOCODO.NET package
-
-```sh
- Index index = new Index();
- index.AddVocs(...);
- // index whole c:\\ drive and store texts internally
- index.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", "c:\\"), ind.WorkPath + "\\textcache.zip"));
- if (index.CanSearch)
- {
-  Index.SearchResult = index.Search("hello world");
- }
- else
- {
-  // creating ...
-  Task ret = ind.Create();
-  ret.Wait();
- }
-
-```

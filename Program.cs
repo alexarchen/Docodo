@@ -22,60 +22,16 @@ using System.Linq;
 using System.IO;
 using System.Collections.Generic;
 using System.Text;
-using Iveonik.Stemmers;
+using Docodo;
 
 namespace Docodo
 {
     class Program
     {
-        static private ReaderWriterLockSlim cancelLock = new ReaderWriterLockSlim();
-        static private CancellationTokenSource _cancelationToken = null;
-        static private CancellationTokenSource cancelationToken { get {
-                cancelLock.EnterReadLock();
-                try
-                {
-                    return (_cancelationToken);
-                }
-                finally
-                {
-                    cancelLock.ExitReadLock();
-                }
 
-            }
-
-            set
-            {
-                cancelLock.EnterWriteLock();
-                try
-                {
-                    _cancelationToken = value;
-                }
-                finally
-                {
-                    cancelLock.ExitWriteLock();
-                }
-            }
-        }
-
+        static private CancellationTokenSource cancelationToken;
+    
         
-        internal class VocGroup
-        {
-            public string root;
-            public int id;
-            public List<VocRecord> words = new List<VocRecord>();
-        }
-        internal struct VocRecord
-        {
-            public VocRecord(string s, VocGroup gr)
-            {
-                group = gr;
-                suff = s;
-            }
-            public VocGroup group;
-            public string suff;
-        }
-
-
         static public Index ind; // Global index
         
         static void Main(string[] args)
@@ -104,19 +60,22 @@ namespace Docodo
             Console.Write("\n");
             
             // TODO: create voc command, like -cv:en
-            if (!File.Exists("Dict\\ru.voc"))
+
+            foreach (string crvoc in (from a in args where a.StartsWith("-cv:") select a.Substring(4)))
             {
-                Console.WriteLine("Creating russian voc (wait a minute)...");
-                OpenCorporaVocBuilder.CreateFromOpenCorpora("Dict\\ru\\dict.opcorpora.xml", "Dict\\ru.voc");
-            }
-            if (!File.Exists("Dict\\en.voc"))
-            {
-                Console.WriteLine("Creating english voc (wait a minute)...");
-                FreeLibVocBuilder.CreateFromFolder("Dict\\en", "Dict\\en.voc");
+                if (crvoc.ToLower().Equals("ru"))
+                {
+                    Console.WriteLine("Creating russian voc (wait a minute)...");
+                    OpenCorporaVocBuilder.CreateFromOpenCorpora("Dict\\ru\\dict.opcorpora.xml", "Dict\\ru.voc");
+                }
+                else
+                {
+                    Console.WriteLine($"Creating {crvoc} voc (wait a minute)...");
+                    FreeLibVocBuilder.CreateFromFolder($"Dict\\{crvoc}", $"Dict\\{crvoc}.voc");
+                }
             }
 
-            String path = "d:\\temp\\bse\\test";
-            String basepath = ".";// "d:\\temp\\index";
+            String basepath = ".";
             try
             {
                 basepath = (from a in args where a.StartsWith("-i:") select a).Last().Substring(3);
@@ -124,21 +83,74 @@ namespace Docodo
             catch (Exception e) { }
             ind = new Index(basepath, false, vocs.ToArray<Vocab>());
             
+
+            foreach (string source in (from a in args where a.StartsWith("-source:") select a.Substring(8)))
+            {
+                var spl = source.Split(',');
+                if (spl[0].Equals("doc"))
+                    ind.AddDataSource(new DocumentsDataSource("doc", spl[1]));
+                else
+                 if (spl[0].Equals("web"))
+                    ind.AddDataSource(new WebDataSource("web", spl[1]));
+                else
+                 if (spl[0].Equals("mysql"))
+                {
+                    string Connect = null;
+                    string Query = null;
+                    string FieldName = null;
+                    string BasePath = null;
+                    try
+                    {
+                        foreach (string line in File.ReadAllLines(spl[1]))
+                        {
+                            string[] name = line.Split("=");
+                            if (name[0].Equals("Connect")) { Connect = line.Substring(8); }
+                            if (name[0].Equals("Query")) { Query = line.Substring(6); }
+                            if (name[0].Equals("BasePath")) { BasePath = line.Substring(9); }
+                            if (name[0].Equals("IndexType")) { FieldName = name[1]; }
+                        }
+
+                        if (Connect == null) throw new InvalidDataException("No Connect key");
+                        if (Query == null) throw new InvalidDataException("No Query key");
+                        if (FieldName == null) throw new InvalidDataException("No IndexType key");
+                        if (BasePath == null) throw new InvalidDataException("No BasePath key");
+                        ind.AddDataSource(new MySqlDBDocSource("mysql_"+spl[1], BasePath, Connect, Query, FieldName));
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("Error adding mysql source: " + e.Message);
+                    }
+                }
+            }
+
+            String path = "d:\\temp\\bse\\test";
+
+            //ind.AddDataSource(new IndexTextCacheDataSource(new MySqlDBDocSource("mysql", path, "server = localhost; user = root; database = Test; password = root;","SELECT * FROM Docs","Name"), ind.WorkPath + "\\textcache.zip"));
+
+            //            ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
             //ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
-            ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
             //            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
             //            ind.AddDataSource(new IndexTextFilesDataSource("txt", path, "*.txt", 1251));
             //ind.bKeepForms = true;
             //ind.MaxDegreeOfParallelism = 1; // for test
-            cancelationToken = ind.cancel; // token to cancel something
 
-            if (ind.CanSearch) Console.WriteLine("Index loaded, contains {0} words", ind.Count());
+            ind.LoadStopWords("Dict\\stop.txt");
+            foreach (string sf in (from a in args
+                                   where a.StartsWith("-stops:")
+                                   select a.Substring(7)))
+                 ind.LoadStopWords(sf);
+            
+            
 
+            cancelationToken = ind.cancelationToken; // token to cancel something
+
+            if (ind.CanSearch) Console.WriteLine("Index loaded, contains {0} words", ind.Count);
+            
             ConsoleKey c;
             do
             {
 
-                Console.WriteLine("Press i to index" + (ind.CanSearch ? ", s to search" : "") + ", e to exit...");
+                Console.WriteLine("Press "+(ind.CanIndex?"i to index, ":"") + (ind.CanSearch ? " s to search, " : "") + " e to exit...");
                 c = Console.ReadKey(false).Key;
 
                 if (c==ConsoleKey.S)
@@ -171,9 +183,7 @@ namespace Docodo
                 else
                 if (c == ConsoleKey.I)
                 {
-                    Console.WriteLine($"Start Indexing {path}...");
-
-                    Task ret = ind.Create();
+                    Console.WriteLine($"Start Indexing ...");
 
                     // user input task
                    
@@ -206,12 +216,16 @@ namespace Docodo
                     //cT.Start(); // listen console to interrupt 
                     try
                     {
-                        ret.Wait();
+                        ind.Create().Wait();
 
                     }
                     catch (OperationCanceledException e)
                     {
 
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("Error creaing index");
                     }
                     cancelationToken = null;
                    
