@@ -19,11 +19,12 @@ You can create index and search from console
 ```sh
 docodo [-i:<path>] [-source:<source1>] [-source:<source2>] ...
 ```
-where <path> - path to the index files, 
-<source..> - documents source description in a form <type>,<source_path>
- where <type> is one of doc|web|mysql,
- <source_path> path to the documents folder when type=doc, 
- url of web server when type=web and pass to the query file is type=mysql
+where:
+ - <path> - path to the index files, 
+ - <source..> - documents source description in a form <type>,<source_path>
+ where:
+ -- <type> is one of doc|web|mysql,
+ -- <source_path> path to the documents folder when type=doc, url of web server when type=web and pass to the query file is type=mysql
  
 
 ## As REST server
