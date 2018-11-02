@@ -64,6 +64,8 @@ namespace Docodo
         // Add document from or TEXT field
         public virtual void AddRecord(string name,char[] buff, string fields)
         {
+            if ((fields != null) && (!fields.Contains("Source=")))
+                fields += $"Source={Name}\n";
             records.Enqueue(new IndexPagedTextFile(name,new string (buff),fields));
         }
 
@@ -72,6 +74,8 @@ namespace Docodo
         {
             bool isText = false;
             IIndexDocument doc = null;
+            if ((fields != null) && (!fields.Contains("Source=")))
+              fields += $"Source={Name}\n";
 
             if ((indexType==IndexType.File) || (indexType != IndexType.Blob)) throw new InvalidDataException("Adding record of wrong IndexType");
 
@@ -95,7 +99,7 @@ namespace Docodo
                 {
                     
                     
-                        IndexPagedTextFile file = WebDataSource.FromHtml(stream, name);
+                        IndexPagedTextFile file = WebDataSource.FromHtml(stream, name,Name);
                         if (fields != null)
                             file.SetHeaders(fields);
                     
@@ -124,7 +128,10 @@ namespace Docodo
         {
             if (indexType != IndexType.File) throw new InvalidDataException("Adding record of wrong IndexType");
 
-                IndexTextFilesDataSource.IndexedTextFile doc;
+            if ((fields != null) && (!fields.Contains("Source=")))
+                fields += $"Source={Name}\n";
+
+            IndexTextFilesDataSource.IndexedTextFile doc;
             if (fname.ToLower().EndsWith(".pdf"))
                 doc = new DocumentsDataSource.IndexPDFDocument(path + "\\" + fname, this);
             else
@@ -243,6 +250,8 @@ namespace Docodo
                 }
 
                 if (primaryname.Length > 0) name = primaryname;
+                builder.Append("Name=" + name+"\n");
+
                 switch (indexType) {
                     case IndexType.File:
                     if (fname.Length > 0)

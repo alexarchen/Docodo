@@ -45,8 +45,11 @@
 
   <ItemGroup>
     <Compile Remove="Docodo.NET\**" />
+    <Compile Remove="XUnitDocodoTest\**" />
     <EmbeddedResource Remove="Docodo.NET\**" />
+    <EmbeddedResource Remove="XUnitDocodoTest\**" />
     <None Remove="Docodo.NET\**" />
+    <None Remove="XUnitDocodoTest\**" />
   </ItemGroup>
 
   <ItemGroup>

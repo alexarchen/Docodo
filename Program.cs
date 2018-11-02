@@ -26,6 +26,7 @@ using Docodo;
 
 namespace Docodo
 {
+   
     class Program
     {
 
@@ -36,6 +37,7 @@ namespace Docodo
         
         static void Main(string[] args)
         {
+   
             Console.Write("DOCODO Search Engine\nCopyrigt (c) 2018 Alexey Zakharchenko \n");
             int nPort = 9001;
             try
@@ -47,9 +49,7 @@ namespace Docodo
             if (args.Contains("server"))
              new DocodoServer(nPort);
 
-            //Json.JsonParser.Deserialize( parser = new Json.JsonParser();
             List<Vocab> vocs = new List<Vocab>();
-            //Dictionary<string, Type> stemmers = new Dictionary<string, Type>();
             Console.Write("Loaded vocs: ");
             foreach (string file in Directory.GetFiles("Dict\\", "*.voc"))
             {

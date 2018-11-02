@@ -49,7 +49,8 @@ namespace Docodo
                 result.Append("Name=" + Name + "\n");
                 if (pdfReader.Info.ContainsKey("Author"))
                     result.Append("Author=" + pdfReader.Info["Author"] + "\n");
-                return GetHeadersFromDscrFile(fname, Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
+                result.Append("Source=" + parent.Name + "\n");
+                return GetHeadersFromDscrFile(fname, result.ToString());//Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
             }
 
             override public bool MoveNext() 

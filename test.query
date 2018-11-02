@@ -1,0 +1,4 @@
+Connect=server = localhost; user = root; database = Test; password = root;
+Query= SELECT * FROM Docs
+IndexType=File:FileName
+BasePath=D:\Temp\BSE\test

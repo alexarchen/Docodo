@@ -60,7 +60,7 @@ namespace Docodo
     /* Class to simply hold read paged text document for DOCODO index */
     public class IndexPagedTextFile: IIndexDocument
     {
-        private List<IndexPage> pages = new List<IndexPage>();
+        public List<IndexPage> pages = new List<IndexPage>();
         public string Name { get; set; }
         public IndexPagedTextFile(string name,string text,string headers)
         {
@@ -302,7 +302,7 @@ namespace Docodo
             public virtual string GetHeaders()
             {
               if (headers != null) return headers();
-              return GetHeadersFromDscrFile(fname, "Name=" + Name + "\n");
+              return GetHeadersFromDscrFile(fname, "Name=" + Name + "\nSource="+parent.Name+"\n");
             }
             virtual public bool MoveNext() { npage++;
 

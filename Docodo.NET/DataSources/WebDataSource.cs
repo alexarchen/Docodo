@@ -169,7 +169,7 @@ namespace Docodo
                         }
                         else
                         {
-                            ret = FromHtml(res.GetResponseStream(), str.Substring(path.Length));
+                            ret = FromHtml(res.GetResponseStream(), str.Substring(path.Length),Name);
                         }
                     }
                 }
@@ -180,7 +180,7 @@ namespace Docodo
            return ret;
         }
 
-        public static IndexPagedTextFile FromHtml(Stream stream, string url)
+        public static IndexPagedTextFile FromHtml(Stream stream, string url,string sourcename)
         {
             HtmlDocument html = new HtmlDocument();
             html.Load(stream);
@@ -227,6 +227,8 @@ namespace Docodo
                     }
                 }
                 headers.Append($"Name={url}\n");
+                headers.Append($"Source={sourcename}\n");
+
                 if (Title.Length > 0) headers.Append($"Title={Title}\n");
                 if (Author.Length > 0) headers.Append($"Author={Author}\n");
 

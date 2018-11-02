@@ -117,19 +117,21 @@ namespace Docodo
         public static IndexSequence operator +(IndexSequence seq1, IndexSequence seq2)
         {
             IndexSequence res = new IndexSequence();
-            res.Capacity = Math.Max(seq1.Count, seq2.Count);
+            //res.Capacity = Math.Max(seq1.Count, seq2.Count);
             IEnumerator<ulong> [] seqe = { seq1.GetEnumerator(), seq2.GetEnumerator() };
             bool[] Move = { true, true };
             bool[] Exists = { false, false };
             do
             {
-                for (int q=0;q<2;q++)
-                 if (Move[q]) Exists[q] = seqe[q].MoveNext();
+                for (int q = 0; q < 2; q++)
+                { if (Move[q]) Exists[q] = seqe[q].MoveNext();
+                    Move[q] = false;
+                }
 
                 if (Exists[0] || Exists[1])
                 {
-                    if (!Exists[1]) res.Add(seqe[0].Current);
-                    else if (!Exists[0]) res.Add(seqe[1].Current);
+                    if (!Exists[1]) { res.Add(seqe[0].Current); Move[0] = true; }
+                    else if (!Exists[0]) { res.Add(seqe[1].Current); Move[1] = true; }
                     else
                     { // both
 
