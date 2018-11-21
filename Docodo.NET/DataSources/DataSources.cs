@@ -1,4 +1,21 @@
-﻿using HtmlAgilityPack;
+﻿//DOCODO Search Engine
+//Copyright(C) 2018  Alexey Zakharchenko
+// https://github.com/alexarchen/Docodo
+
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU General Public License
+//    along with this program.If not, see<https://www.gnu.org/licenses/>.
+
+using HtmlAgilityPack;
 using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
 using System;
@@ -38,10 +55,10 @@ namespace Docodo
     public interface IIndexDataSource: IDisposable //: IEnumerable<IIndexDocument>, IEnumerator<IIndexDocument>
     {
         /* Name must be unique inside index and short*/
-        string Name { get;  }
+        string Name { get; }
+        string Path { get; }
         void Reset(); // sets to initial counter, must be called before first call to Next()!!!
         IIndexDocument Next(bool wait=true); // iterate next element
-        
     }
 
     /* implement these interface to direct access from indext 
@@ -87,98 +104,178 @@ namespace Docodo
 
     }
 
-    /* Simple paginated text files data source */
-    /* Single thread, single enumerator !!!! */
-    public class IndexTextFilesDataSource : IIndexDirectDataSource
+    /* Abstract Datasource which runs navigation in separate thread and 
+     * manages documents via ConcurrentQueue */
+    public abstract class QueuedDataSource<T> : IIndexDataSource
     {
-        CancellationTokenSource cts;
-        private Task navtask;
-        private bool isNavigating = false;
-        public string mod;
-        public string path;
-        private AutoResetEvent _event = new AutoResetEvent(true);
+        public QueuedDataSource(string name,string path){
+            Name = name;
+            Path = path;
+         }
 
-        public int encodePage {get; set;}
-        /* Name - unique name, path - folder with txt files, mod - modificator, EncodePage - code page number */
-        public IndexTextFilesDataSource(string Name, string path,string mod="*.txt",int EncodePage=1252)
+        protected CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+        protected ConcurrentQueue<T> filesToDo = new ConcurrentQueue<T>();
+
+        // called when start navigation, must override
+        protected abstract void Navigate(ConcurrentQueue<T> queue, CancellationToken token);
+
+        private AutoResetEvent _event = new AutoResetEvent(true);
+        public string Name { get; set; } // unique name of datasource
+        public string Path { get; protected set; } // path to navigate
+        public bool IsNavigating { get; protected set; } = false;
+        async Task NavigateAsync()
         {
-            
-            cts = new CancellationTokenSource();
-            this.path = path;
-            this.Name = Name;
-            this.mod = mod;
-            encodePage = EncodePage;
-            filesToDo = new ConcurrentQueue<IndexedTextFile>();
+            cancellationTokenSource = new CancellationTokenSource();
+            IsNavigating = true;
+            filesToDo = new ConcurrentQueue<T>();
+            try
+            {
+                await Task.Run(() => { Navigate(filesToDo, cancellationTokenSource.Token); IsNavigating = false; }, cancellationTokenSource.Token);
+            }
+            catch (TaskCanceledException e)
+            {
+
+            }
+            IsNavigating = false;
+            _event.Set();
         }
+
+        protected virtual void Enqueue(ConcurrentQueue<T> filesToDo,T item)
+        {
+            filesToDo.Enqueue(item);
+        }
+
+        virtual public IIndexDocument Next(bool wait)
+        {
+
+            T obj;
+            if (!filesToDo.TryDequeue(out obj))
+            {
+                // Console.WriteLine($"TryDequee returns false {Navigating}, {urlsToDo.Count}");
+                if (wait && IsNavigating)
+                {
+                    while (IsNavigating)
+                    {
+                        Thread.Sleep(100);
+                        if (filesToDo.TryDequeue(out obj)) break;
+                    }
+                }
+
+            }
+
+            if (obj == null)
+                return null;
+
+            return DocumentFromItem(obj);
+
+        }
+
+        protected abstract IIndexDocument DocumentFromItem(T item);
 
         virtual public void Dispose()
         {
-            cts.Cancel();
-            filesToDo.Clear();
+            cancellationTokenSource.Cancel();
+            filesToDo = new ConcurrentQueue<T>();
         }
 
-        ~IndexTextFilesDataSource()
+        public virtual void Reset()
         {
-            cts.Cancel();
+            if (IsNavigating) // remove previous task
+            {
+                cancellationTokenSource.Cancel();
+                filesToDo = new ConcurrentQueue<T>();
+            }
+            NavigateAsync();
 
         }
+    }
 
-        ConcurrentQueue<IndexedTextFile> filesToDo;
 
-        // not thread safe yet
+
+
+    /* Simple paginated text files data source */
+    /* Single thread, single enumerator !!!! */
+    public class IndexTextFilesDataSource : QueuedDataSource<IndexTextFilesDataSource.IndexedTextFile>, IIndexDirectDataSource
+    {
+        const int MAX_ITEMS = 1000000000;
+        public int MaxItems = MAX_ITEMS; // set MaxItems before Reset()
+        public string mod;
+        public int encodePage {get; set;}
+        /* Name - unique name, path - folder with txt files, mod - modificator, EncodePage - code page number */
+        public IndexTextFilesDataSource(string Name, string path,string mod="*.txt",int EncodePage=1252): base(Name, path)
+        {
+            this.mod = mod;
+            encodePage = EncodePage;
+        }
+
+          // not thread safe yet
         public IIndexDirectDocument this[string filename]
         {
             get
             {
                 // filename is relative
-                return new IndexedTextFile(path.TrimEnd('\\')+"\\"+filename, this); 
+                return new IndexedTextFile(Path.TrimEnd('\\')+"\\"+filename, this); 
             }
         }
-        
-        private void Navigate(string folder, string mod)
+        private int Count = 0;
+
+        protected override void Navigate(ConcurrentQueue<IndexedTextFile> queue, CancellationToken token)
+        {
+            Navigate(queue, Path, mod);
+        }
+
+        protected override IIndexDocument DocumentFromItem(IndexedTextFile item)
+        {
+            return item;
+        }
+
+        void Navigate(ConcurrentQueue<IndexedTextFile> queue,string folder, string mod)
         {
 
             Console.WriteLine($"Nav {folder} start...");
             try
             {
                 List<string> filelist = new List<string>();
-                foreach (string modic in mod.Split(";"))
+                foreach (string modic in mod.Split(';'))
                     filelist.AddRange(Directory.GetFiles(folder, modic));
                 foreach (String file in filelist)
                 {
                     Console.WriteLine($"QUEUE {file}");
-                    filesToDo.Enqueue(new IndexedTextFile(file,this));
-                    _event.Set();
+                    if (Count < MaxItems)
+                    {
+                        Enqueue(queue,new IndexedTextFile(file, this));
+                        Count++;
+                    }
 
                 }
+                
 
                 string[] folders = Directory.GetDirectories(folder);
 
                 foreach (string _folder in folders)
                 {
-                    Navigate(_folder, mod);
+                    Navigate(queue,_folder, mod);
                 }
 
             }
             catch (Exception e)
             {
-
+                Console.WriteLine("Error: " + e.Message);
             }
         }
 
-        public string Name { get; protected set; }
         public class IndexedTextFile : IIndexDirectDocument, IEnumerator<IndexPage>
         {
             StreamReader sr = null;
             const int PAGE_SIZE = 3000;
             public string fname { get; protected set; }
-            public IndexedTextFile(string fname, IndexTextFilesDataSource parent)
+            public IndexedTextFile(string fname, IIndexDataSource parent)
             {
                 this.fname = fname;
-                Name = fname.Substring(fname.IndexOfAny(new char[] { '\\', '/' }, parent.path.Length) + 1);
+                Name = fname.Substring(parent.Path.Length);// fname.IndexOfAny(new char[] { '\\', '/' }, parent.Path.Length) + 1);
                 this.parent = parent;
             }
-            public IndexTextFilesDataSource parent { get; private set; }
+            public IIndexDataSource parent { get; private set; }
             public string Name { get;  set; }
             private int npage = -1;
             protected IndexPage _current;
@@ -255,8 +352,8 @@ namespace Docodo
                         {
                             string line = streamReader.ReadLine();
                             if (line == null) break;
-                            if (line.TrimStart(' ').StartsWith(';')) continue;
-                            dict.TryAdd(line.Split('=')[0], line.Split('=')[1].TrimEnd(new char[] { '\r', '\n' }));
+                            if (line.TrimStart(' ').StartsWith(";")) continue;
+                            dict.Add(line.Split('=')[0], line.Split('=')[1].TrimEnd(new char[] { '\r', '\n' }));
                         }
                     }
                     catch (Exception e)
@@ -276,7 +373,7 @@ namespace Docodo
                         {
                             string line = stringReader.ReadLine();
                             if (line == null) break;
-                            headers.TryAdd(line.Split('=')[0], line.Split('=')[1]);
+                            headers.Add(line.Split('=')[0], line.Split('=')[1]);
                         }
                     }
                 } catch (Exception e) { }
@@ -351,55 +448,17 @@ namespace Docodo
         }
 
 
-        public virtual IIndexDocument Next(bool wait = true)
-        {
-            try
-            {
-                if ((filesToDo.Count == 0) && (isNavigating) && (wait))
-                {
-                    _event.Reset();
-                    _event.WaitOne();
-                    // waiting until nask completed or current
-                }
-                IndexedTextFile file;
-                if (filesToDo.TryDequeue(out file))
-                {
-                    return (file);
-                }
-            }
-            catch (Exception e)
-            {
-
-            }
-            return (null);
-
-        }
-
-        virtual public void Reset() {
-            if (!isNavigating)
-            {
-                filesToDo.Clear();
-                // start navigating
-                isNavigating = true;
-                navtask = Task.Factory.StartNew(() =>
-                {
-                    Navigate(path, mod);
-                    isNavigating = false;
-                    _event.Set();
-                    Console.WriteLine("Navigation finished");
-                }, cts.Token);
-            }
-        }
-
     }
+
     /* Intermediate DataSource to cache passed text into a file */
     /* Single thread, single enumerator !!!! */
-    /* Don't pass it to the Index */
+    /* Don't pass it to the Index, index creates it itself */
     public class IndexTextCacheDataSource: IIndexDirectDataSource
     {
         public string Name { get => source.Name; }
+        public string Path { get => source.Path; }
         public string filename;
-        IIndexDataSource source;
+        public IIndexDataSource source { get; protected set; }
        // IEnumerator<IIndexDocument> enumerator;
 
         ZipArchive archive;
@@ -425,7 +484,7 @@ namespace Docodo
                 }
             }
         }
-
+        // Disposes only current datasource, do not disposes source
         public void Dispose()
         {
             lock (ziplock)

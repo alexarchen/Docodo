@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using System.IO;
 
 namespace XUnitDocodoTest
 {
@@ -35,11 +37,16 @@ namespace XUnitDocodoTest
 
         class TestDataSource : IIndexDataSource
         {
-
+            public TestDataSource(int nPages)
+            {
+                Npages = nPages;
+            }
+            public int Npages { get; }
 
             public string Name { get; set; } = "Test";
+            public string Path { get; set; } = "Test";
 
-            virtual public void Reset() { }
+            virtual public void Reset() { hasNext = 0;}
             private int hasNext = 0;
             object readlock = new object();
 
@@ -51,8 +58,10 @@ namespace XUnitDocodoTest
                     {
                         string name = (hasNext == 0) ? "Sample" : "Dump";
                         IndexPagedTextFile pf = new IndexPagedTextFile(name, TestText1, TestHeaders1+$"Name={name}\n");
+                        for (int q=0;q<Npages-1;q++)
+                         pf.pages.Add(new IndexPage(""+(q+2), TestText1));
+
                         hasNext++;
-                        pf.pages.Add(new IndexPage("2", TestText1));
                         return pf;
                     }
                 }
@@ -62,58 +71,123 @@ namespace XUnitDocodoTest
             public void Dispose() { }
 
         }
-        Index index = new Index();
-
-        public IndexTest() {
-            index.AddDataSource(new TestDataSource());
-            index.Create().Wait();
-        }
 
         [Fact]
-        public void CoordTest()
+        public async Task CoordTest()
         {
-            Assert.True(index.CanSearch);
-
-            string[] words = { "and", "tupman", "everybody", "old" };
-
-            // coordinate test
-            foreach (string word in words)
+            using (Index index = new Index())
             {
 
-                List<int> pos = new List<int>();
-                foreach (Match m in Regex.Matches(TestText1.ToLower(), @"\b"+word+@"\b"))
-                {
-                    pos.Add(m.Index);
-                }
-                Index.SearchResult res = index.Search(word);
+                index.WorkPath = "CoordTest\\";
+                index.AddDataSource(new TestDataSource(1000));
+                await index.CreateAsync();
+                Assert.False(index.IsCreating);
+                Assert.True(index.CanSearch);
 
-                Assert.Equal(pos.Count, res.foundPages[0].pos.Count);
-                foreach (var p in res.foundPages)
-                  Assert.True(Enumerable.SequenceEqual(pos, p.pos));
+                string[] words = { "and", "tupman", "everybody", "old" };
+
+                // coordinate test
+                foreach (string word in words)
+                {
+
+                    List<int> pos = new List<int>();
+                    foreach (Match m in Regex.Matches(TestText1.ToLower(), @"\b" + word + @"\b"))
+                    {
+                        pos.Add(m.Index);
+                    }
+                    Index.SearchResult res = index.Search(word);
+
+                    Assert.Equal(pos.Count, res.foundPages[0].pos.Count);
+                    foreach (var p in res.foundPages)
+                        Assert.True(Enumerable.SequenceEqual(pos, p.pos));
+
+                }
 
             }
-
-            
+            Directory.Delete("CoordTest\\", true);
 
         }
 
         [Fact]
-        public void RequestSyntaxTest()
+        public async Task RequestSyntaxTest()
         {
-            Assert.True(index.CanSearch);
+            using (Index index = new Index())
+            {
 
-            Index.SearchResult res = index.Search("and (tupman|old) {Name=Dump}" /*, new Index.SearchOptions(){ dist = 20}*/);
 
-            Assert.True(1==res.foundDocs.Count);
+                index.WorkPath = "RequestSyntaxTest\\";
+                int Npages = 100;
+                index.AddDataSource(new TestDataSource(Npages));
+                await index.CreateAsync();
+                Assert.False(index.IsCreating);
+                Assert.True(index.CanSearch);
 
-            Assert.True(2==res.foundDocs.First().pages.Count);
+                Index.SearchResult res = index.Search("and (tupman|old)" /*, new Index.SearchOptions(){ dist = 20}*/);
 
-            Assert.Equal(res.foundPages[0].pos.Count,res.foundPages[1].pos.Count);
-            Assert.Equal(42,res.foundPages[0].pos.Count);
-            Assert.True(Enumerable.SequenceEqual(res.foundPages[0].pos, res.foundPages[1].pos));
+                Assert.Equal(2, res.foundDocs.Count);
 
-            res = index.Search("and tupman old");
+                Assert.Equal(Npages, res.foundDocs.First().pages.Count);
+                Assert.Equal(Npages, res.foundDocs.Last().pages.Count);
 
+                res = index.Search("and (tupman|old) {Name=Dump}" /*, new Index.SearchOptions(){ dist = 20}*/);
+
+                Assert.Equal(1, res.foundDocs.Count);
+
+                Assert.Equal(Npages, res.foundDocs.First().pages.Count);
+
+                Assert.Equal(res.foundPages[0].pos.Count, res.foundPages[1].pos.Count);
+                for (int q = 0; q < 2 * Npages; q++)
+                    Assert.Equal(42, res.foundPages[q].pos.Count);
+                Assert.True(Enumerable.SequenceEqual(res.foundPages[0].pos, res.foundPages[1].pos));
+
+                res = index.Search("and tupman old");
+
+                res = index.Search("Another remained");
+            }
+            Directory.Delete("RequestSyntaxTest\\", true);
+
+        }
+
+        [Fact]
+        public async Task VocabTest()
+        {
+            using (Index index = new Index())
+            {
+                index.WorkPath = "VocabTest\\";
+                int Npages = 100;
+                TestDataSource ds = new TestDataSource(Npages);
+                index.AddDataSource(ds);
+                await index.CreateAsync();
+                Assert.False(index.IsCreating);
+                Assert.True(index.CanSearch);
+
+                Vocab voc = new Vocab();
+                voc.Add("and", 1);
+                voc.Add("end", 3);
+                voc.Add("old", 2);
+                voc.Add("the", 6);
+                voc.Add("them", 5);
+                voc.Add("then", 4);
+                voc.Name = "en";
+
+                using (Index vocindex = new Index("VocabTest\\vocindex\\"))
+                {
+                    vocindex.AddDataSource(ds);
+                    vocindex.AddVoc(voc);
+
+                    await vocindex.CreateAsync();
+
+                    Assert.Equal(Index.Status.Idle, vocindex.status);
+                    Assert.True(vocindex.CanSearch);
+
+                    Assert.Equal(Regex.Matches(TestText1.ToLower(), @"\band\b").Count * 2 * Npages, vocindex["#1"].Count);
+
+                    Assert.True(vocindex.Search("Tupman").Equals(index.Search("Tupman")));
+                    Assert.True(vocindex.Search("and").Equals(index.Search("and")));
+                    Assert.True(vocindex.Search("Tupman and").Equals(index.Search("Tupman and")));
+                }
+            }
+            Directory.Delete("VocabTest\\", true);
         }
 
 

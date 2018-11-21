@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+<basepath>Test\</basepath>
+<document>
+ <title>Dickens Charles. The Pickwick Papers</title>
+ <file>Dickens Charles. The Pickwick Papers - royallib.ru.txt</file>
+ <id>1</id>
+</document>
+<document>
+ <title>PDF specification</title>
+ <file>PDFSPEC.PDF</file>
+ <id>2</id>
+</document>
+</root>
+

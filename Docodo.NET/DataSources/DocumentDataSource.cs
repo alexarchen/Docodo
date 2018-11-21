@@ -16,11 +16,11 @@ using System.Threading.Tasks;
 
 namespace Docodo
 {
-    public class DocumentsDataSource: IndexTextFilesDataSource
+    public class DocumentsDataSource : IndexTextFilesDataSource
     {
-        public DocumentsDataSource(string Name,string path): base(Name,path,"*.pdf;*.txt",1251)
+        public DocumentsDataSource(string Name, string path) : base(Name, path, "*.pdf;*.txt", 1251)
         {
-            
+
         }
 
         public class IndexPDFDocument : IndexedTextFile
@@ -28,12 +28,12 @@ namespace Docodo
             private PdfReader pdfReader = null;
             int npage = -1;
             string text = "";
-            public IndexPDFDocument(string fname, IndexTextFilesDataSource parent) : base(fname, parent)
+            public IndexPDFDocument(string fname, IIndexDataSource parent) : base(fname, parent)
             {
-                pdfReader  = new PdfReader(fname);
+                pdfReader = new PdfReader(fname);
 
             }
-            public IndexPDFDocument(string fname, Stream data, IndexTextFilesDataSource parent) : base(fname, parent)
+            public IndexPDFDocument(string fname, Stream data, IIndexDataSource parent) : base(fname, parent)
             {
                 pdfReader = new PdfReader(data);
 
@@ -53,9 +53,9 @@ namespace Docodo
                 return GetHeadersFromDscrFile(fname, result.ToString());//Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
             }
 
-            override public bool MoveNext() 
+            override public bool MoveNext()
             {
-                if (npage < pdfReader.NumberOfPages-1)
+                if (npage < pdfReader.NumberOfPages - 1)
                 {
                     npage++;
                     if (npage == 0)
@@ -90,25 +90,53 @@ namespace Docodo
 
         }
 
-
-
-        override public IIndexDocument Next(bool wait) 
+        public static IIndexDocument FromFile(string file, IIndexDataSource parent)
         {
-            IndexedTextFile file = (IndexedTextFile)base.Next(wait);
+            string s = file.ToLower();
+            if (s.EndsWith(".pdf"))
+            {
+                // PDF
+                return new IndexPDFDocument(file, parent);
+
+            }
+            else
+            if (s.EndsWith(".txt"))
+            {
+                return new IndexedTextFile(file, parent);
+            }
+            else
+                if ((s.EndsWith(".html")) || (s.EndsWith(".html")))
+            {
+
+                using (FileStream fs = File.OpenRead(file))
+                {
+                    return WebDataSource.FromHtml(fs, file, parent.Name);
+                }
+
+            }
+
+            return null;
+        }
+
+        protected override IIndexDocument DocumentFromItem(IndexedTextFile item)
+        {
+            IndexedTextFile file = (IndexedTextFile)base.DocumentFromItem(item);
 
             if (file != null)
             {
+                return FromFile(file.fname, this);
+/*
                 if (file.Name.ToLower().EndsWith(".pdf"))
                 {
                     // PDF
-                    return new IndexPDFDocument(file.fname,this);
+                    return new IndexPDFDocument(file.fname, this);
 
-                }
+                }*/
             }
 
             return (file);
-
         }
+
     }
 
 }

@@ -15,10 +15,18 @@ namespace Docodo
         public const int GROUP_NOT_EXCACT_WORD_MASK = 0x01000000; // mask for bit in group number to skip the word if it's excact the same as its stemm
         public const int GROUP_NUMBER_MASK = 0xFFFFFF;
 
-        public char[] Range { get; } = { 'a', 'z' }; // letters range of this vocab
+        public (char begin,char end) Range { get
+            {
+                if (Count>0)
+                 return (this.First().Key[0],this.Last().Key[0]);
+
+                return ('\0', '\0');
+            }
+        } // first letters range of this vocab
         
-        public void SetRange(char a,char b) { Range[0] = a; Range[1] = b; }
+        //public void SetRange(char a,char b) { Range[0] = a; Range[1] = b; }
         public IStemmer stemmer;
+        public string Name;
         public Vocab(IStemmer s = null)
         {
             stemmer = s;
@@ -28,6 +36,7 @@ namespace Docodo
             
             {
                 string lang = new FileInfo(filename).Name.Split('.')[0];
+                Name = lang;
                 Type stemtype = (from el in Index.Stemmers where el.lang.Equals(lang) select el.type).First();
                 if (stemtype != null)
                 {
@@ -61,9 +70,6 @@ namespace Docodo
             {
                 r.Close();
             }
-
-            Range[0] = this.First().Key[0];
-            Range[1] = this.Last().Key[0];
         }
         /* return word group or 0 if absent */
         public int Search(string word)
@@ -133,7 +139,7 @@ namespace Docodo
             if (hasmatch) currNG &= ~Vocab.GROUP_NOT_EXCACT_WORD_MASK; // clear not-found bit
 
             foreach (int gr in replaceGroups)
-                replaces.TryAdd(gr, currNG);
+                replaces.Add(gr, currNG);
 
 
             foreach (string word in grouplist)

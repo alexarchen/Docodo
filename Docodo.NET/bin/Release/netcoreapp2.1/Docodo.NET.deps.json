@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v2.1": {
-      "Docodo.NET/0.0.5": {
+      "Docodo.NET/0.0.6": {
         "dependencies": {
           "DynamicExpresso.Core": "2.1.0",
           "HtmlAgilityPack": "1.8.9",
@@ -767,7 +767,7 @@
     }
   },
   "libraries": {
-    "Docodo.NET/0.0.5": {
+    "Docodo.NET/0.0.6": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

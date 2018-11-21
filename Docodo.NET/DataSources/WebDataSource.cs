@@ -12,172 +12,200 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-
+using System.Linq;
 
 namespace Docodo
 {
-    public class WebDataSource : IndexTextFilesDataSource
+    public class WebDataSource : QueuedDataSource<string>
     {
         //public string Name { get; }
+        protected bool GoAway = true;  // Go outside initial path
         HashSet<string> urlsAdded = new HashSet<string>();
-        ConcurrentQueue<string> urlsToDo = new ConcurrentQueue<string>();
-        CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+
         //string baseurl { get; }
-        private bool Navigating;
-        public WebDataSource(string name,string url):base(name,url)
+        private string host;
+        private string indextypes = "";
+        public WebDataSource(string name, string url, string indextypes="") : base(name, url)
         {
             Name = name;
-            path = new UriBuilder(url.Substring(0,url.LastIndexOf("/"))).ToString();
+            Path = new UriBuilder(url.Substring(0, url.LastIndexOf("/"))).ToString().ToLower();
+            host = new UriBuilder(Path).Host;
+            //this.indextypes = "."+indextypes.Split(',').Aggregate((a, b) => a + "," + "."+b);
+            this.indextypes = indextypes;
         }
 
-
-        public override void Reset()
+        protected override void Navigate(ConcurrentQueue<string> queue, CancellationToken token)
         {
-            cancellationTokenSource.Cancel();
-            cancellationTokenSource = new CancellationTokenSource();
-            urlsAdded.Clear();
-            urlsToDo.Clear();
-            if (!Navigating)
-            {
-                Task.Factory.StartNew(() => { Navigating = true; Console.WriteLine($"Start web crawler from {path}"); TryAddUrl("/"); Navigate(path + "/"); Navigating = false; }, cancellationTokenSource.Token);
-            }
+            Navigate(queue, token, Path);
         }
 
-        void Navigate(string url)
+
+        protected void Navigate(ConcurrentQueue<string> queue, CancellationToken token,string url)
         {
             var web = new HtmlWeb();
             web.UserAgent = "DOCODO";
             web.UsingCache = false;
             web.PreRequest += new HtmlWeb.PreRequestHandler((req) => {
                 req.Headers.Add("accept", "text/html, text/plain");
-                
+
                 return true; });
             //web.PostResponse += new HtmlWeb.PostResponseHandler((req, resp) => {
             //});
+            Console.WriteLine($"Parse url: {url}");
+
+
             HtmlDocument html = web.Load(url);
             var nodes = html.DocumentNode.SelectNodes("//meta");
-            if (nodes!=null)
-            foreach (var node in nodes)
-            {
-                try
+            if (nodes != null)
+                foreach (var node in nodes)
                 {
-                    if (node.Attributes["http-equiv"].Value.ToLower().Equals("refresh"))
+                    try
                     {
-                        var matches = Regex.Match(node.Attributes["content"].Value, @"url=([\w\.\\_\+\?\&]+)"); 
-                        //string[] arr = node.Attributes["content"].Value.Split(';');
-                        string s =TryAddUrl(matches.Groups[1].Value);
+                        
+                        if ((node.Attributes.Contains("http-equiv")) && (node.Attributes["http-equiv"].Value.ToLower().Equals("refresh")))
+                        {
+                            var matches = Regex.Match(node.Attributes["content"].Value, @"url=([\w\.\\_\+\?\&]+)");
+                            //string[] arr = node.Attributes["content"].Value.Split(';');
+                            string s = TryAddUrl(queue,matches.Groups[1].Value);
                             if (s != null)
-                                Navigate(s);
+                                Task.Run(() => Navigate(queue,token,s));
                         }
+                    }
+                    catch (Exception e) {
+                    }
+                    token.ThrowIfCancellationRequested();
                 }
-                catch (Exception e) { }
-            }
-            
+
             nodes = html.DocumentNode.SelectNodes("//a");
-            if (nodes!=null)
-            foreach (var node in nodes)
-            {
-                if (node.Attributes.Contains("href"))
+            if (nodes != null)
+                foreach (var node in nodes)
                 {
-                    string s = TryAddUrl(node.Attributes["href"].Value);
-                    if (s!=null)
-                        Navigate(s);
+                    if (node.Attributes.Contains("href"))
+                    {
+                        string s = TryAddUrl(queue,node.Attributes["href"].Value);
+                        if (s != null)
+                        {
+                            Navigate(queue,token,s);
+                            Thread.Sleep(100);
+                        }
+                    }
+                    token.ThrowIfCancellationRequested();
                 }
-            }
 
 
         }
 
-        private string TryAddUrl(string url)
+        int Count = 0;
+        public int MaxItems = 1000000;
+
+        private string TryAddUrl(ConcurrentQueue<string> queue,string url)
         {
             string s = url.ToLower();
-            if (s.Length == 0) return (null);
+            if (s.Length == 0) return (null); 
             if (s[0] == '#') return (null);
 
-            if (!s.ToLower().StartsWith("http:"))
-                s = path + (s.StartsWith('/')?"":"/")+ s;
 
-            s = new UriBuilder(s).ToString();
+            try
+            {
+                s = new UriBuilder(s).ToString();
+            }
+            catch (UriFormatException e)
+            {
+                return null;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error parsing url: " + url);
+                return null;
+            }
+            string _host = new UriBuilder(s).Host;
+
+            string ext = "";
             if (s.Length >= 4)
             {
-                string ext = s.ToLower().Substring(s.Length - 4);
+                if (s.LastIndexOf('.')!=-1) 
+                 ext = s.Substring(s.LastIndexOf('.'));
+                if (ext.LastIndexOf('?') >= 0) // remove query string
+                    ext = ext.Substring(0, ext.LastIndexOf('?'));
+
                 if ((ext.Equals(".png")) || (ext.Equals(".svg")) || (ext.Equals(".jpg")) || (ext.Equals(".bmp")) || (ext.Equals(".gif")))
                     s = "";
             }
 
-            if ((s.Length > 0) && (s.ToLower().StartsWith(path.ToLower())))
+            if ((s.Length > 0) && /*((s.StartsWith(path))
+
+                || */ (host.Equals(_host)) /*&& (ext.Equals(".pdf"))) // pdf's can be somewhere on host */
+
+                )
             {
                 if (s.Length > 1024)
                     return null;
 
                 if (!urlsAdded.Contains(s))
                 {
-                    urlsToDo.Enqueue(s);
+                    //if (ext.Length == 0) ext = ".html";
+                    //if (!ext.Equals(".pdf")) ext = ".html";
+                    if ((indextypes.Length == 0) || (Regex.IsMatch(s, indextypes)))
+                    {
+                        if (Count < MaxItems)
+                        {
+                            Enqueue(queue,s);
+                            Count++;
+                        }
+                    }
                     urlsAdded.Add(s);
-                    Console.WriteLine($"Parse url: {s}");
+                    
                     return (s);
                 }
 
             }
             return (null);
         }
-        override public IIndexDocument Next(bool bwait)
+
+        protected override IIndexDocument DocumentFromItem(string item)
         {
-            string str="";
+            return FromUrl(item, this);
+        }
+
+        /* Create IIndexDocument instance parsing url using parent as parent of created instance,
+         * returns one of the known documents: html,txt,pdf, ... depending on server url responce content-Type*/
+        public static IIndexDocument FromUrl(string url,IIndexDataSource parent)
+        {
+            HttpWebRequest req = HttpWebRequest.CreateHttp(url);
+            req.UserAgent = "DOCODO";
+            req.Accept = "text/html, text/plain, application/pdf";
+            req.Method = "GET";
             IIndexDocument ret = null;
-            do
+            WebResponse res;
+            try
             {
-                if (!urlsToDo.TryDequeue(out str))
-                {
-                    // Console.WriteLine($"TryDequee returns false {Navigating}, {urlsToDo.Count}");
-                    if (bwait && Navigating)
-                    {
-                        while (Navigating)
-                        {
-                            if (urlsToDo.TryDequeue(out str)) break;
-                            Thread.Sleep(100);
-                        }
-                    }
-
-                }
-
-                //Console.WriteLine($"TryDequee returns true {Navigating}, {urlsToDo.Count}");
-
-                if (str == null) break; // nothing more or don't wait
-
-                if ((str != null) && (str.Length > path.Length))
-                {
-                     HttpWebRequest req = HttpWebRequest.CreateHttp(str);
-                     req.UserAgent = "DOCODO";
-                     req.Accept = "text/html, text/plain, application/pdf";
-                     req.Method = "GET";
-                     WebResponse res;
-                     try
-                     {
-                       res = req.GetResponse();
-                     }
-                     catch (WebException e)
-                     {
-                        continue;
-                     }
-
-                    /*using () */
-                    {
-                        if (res.ContentType.ToLower().Equals("application/pdf"))
-                        {
-                            ret = new DocumentsDataSource.IndexPDFDocument(str, res.GetResponseStream(), this);
-                        }
-                        else
-                        {
-                            ret = FromHtml(res.GetResponseStream(), str.Substring(path.Length),Name);
-                        }
-                    }
-                }
-
+                res = req.GetResponse();
             }
-            while (ret == null);
+            catch (WebException e)
+            {
+                return null;
+            }
+            
+            if (res.ContentType.ToLower().Equals("application/pdf"))
+            {
+                ret = new DocumentsDataSource.IndexPDFDocument(url, res.GetResponseStream(), parent);
+            }
+            else
+            if (res.ContentType.ToLower().Equals("text/plain"))
+            {
+                using (StreamReader reader = new StreamReader(res.GetResponseStream()))
+                {
+                    ret = new IndexPagedTextFile(url.Substring(parent.Path.Length), reader.ReadToEnd(), "Source=" + parent.Name);
+                }
+            }
+            else
+            {
+                ret = FromHtml(res.GetResponseStream(), url.Substring(parent.Path.Length), parent.Name);
+            }
 
-           return ret;
+
+            return ret;
+
         }
 
         public static IndexPagedTextFile FromHtml(Stream stream, string url,string sourcename)
@@ -195,7 +223,8 @@ namespace Docodo
                     else
                       if (node.Name.Equals("img"))
                     {
-                        builder.Append(node.Attributes["alt"].Value + " ");
+                        if (node.Attributes.Contains("alt"))
+                         builder.Append(node.Attributes["alt"].Value + " ");
                     }
                 }
                 catch (Exception e) { }
@@ -237,14 +266,6 @@ namespace Docodo
             return (null);
         }
 
-        override public void Dispose()
-        {
-            cancellationTokenSource.Cancel();
-            urlsAdded.Clear();
-            urlsToDo.Clear();
-            Navigating = false;
-
-        }
     }
 
 }

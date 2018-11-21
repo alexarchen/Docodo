@@ -2,7 +2,7 @@
   "profiles": {
     "Docodo": {
       "commandName": "Project",
-      "commandLineArgs": "server -i:d:\\temp\\index -source:mysql,test.query",
+      "commandLineArgs": "server -i:Test\\index -source:xml,test.xml",
       "workingDirectory": ".\\"
     }
   }

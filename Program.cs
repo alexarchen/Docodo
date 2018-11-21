@@ -60,7 +60,6 @@ namespace Docodo
             Console.Write("\n");
             
             // TODO: create voc command, like -cv:en
-
             foreach (string crvoc in (from a in args where a.StartsWith("-cv:") select a.Substring(4)))
             {
                 if (crvoc.ToLower().Equals("ru"))
@@ -91,7 +90,17 @@ namespace Docodo
                     ind.AddDataSource(new DocumentsDataSource("doc", spl[1]));
                 else
                  if (spl[0].Equals("web"))
-                    ind.AddDataSource(new WebDataSource("web", spl[1]));
+                {
+                    WebDataSource websource = new WebDataSource("web", spl[1],spl.Length>=2?spl[2]:"");
+//                    websource.MaxItems = 100;
+                    ind.AddDataSource(websource);
+                }
+                else
+                 if (spl[0].Equals("xml"))
+                {
+                    XmlDataSource websource = new XmlDataSource("xml", spl[1]);
+                    ind.AddDataSource(websource);
+                }
                 else
                  if (spl[0].Equals("mysql"))
                 {
@@ -114,7 +123,7 @@ namespace Docodo
                         if (Query == null) throw new InvalidDataException("No Query key");
                         if (FieldName == null) throw new InvalidDataException("No IndexType key");
                         if (BasePath == null) throw new InvalidDataException("No BasePath key");
-                        ind.AddDataSource(new MySqlDBDocSource("mysql_"+spl[1], BasePath, Connect, Query, FieldName));
+                        ind.AddDataSource(new MySqlDBDocSource("mysql_" + spl[1], BasePath, Connect, Query, FieldName));
                     }
                     catch (Exception e)
                     {
@@ -122,17 +131,6 @@ namespace Docodo
                     }
                 }
             }
-
-            String path = "d:\\temp\\bse\\test";
-
-            //ind.AddDataSource(new IndexTextCacheDataSource(new MySqlDBDocSource("mysql", path, "server = localhost; user = root; database = Test; password = root;","SELECT * FROM Docs","Name"), ind.WorkPath + "\\textcache.zip"));
-
-            //            ind.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", path), ind.WorkPath + "\\textcache.zip"));
-            //ind.AddDataSource(new IndexTextCacheDataSource(new WebDataSource("web", "http://localhost/docs/reference/"),ind.WorkPath + "\\textcache.zip"));
-            //            ind.AddDataSource(new IndexTextCacheDataSource(new IndexTextFilesDataSource("txt",path, "*.txt", 1251),ind.WorkPath+"\\textcache.zip"));
-            //            ind.AddDataSource(new IndexTextFilesDataSource("txt", path, "*.txt", 1251));
-            //ind.bKeepForms = true;
-            //ind.MaxDegreeOfParallelism = 1; // for test
 
             ind.LoadStopWords("Dict\\stop.txt");
             foreach (string sf in (from a in args
@@ -186,6 +184,7 @@ namespace Docodo
                     Console.WriteLine($"Start Indexing ...");
 
                     // user input task
+                    
                    
                     Task cT = new Task(() =>
                     {
@@ -216,7 +215,7 @@ namespace Docodo
                     //cT.Start(); // listen console to interrupt 
                     try
                     {
-                        ind.Create().Wait();
+                        ind.CreateAsync().Wait();
 
                     }
                     catch (OperationCanceledException e)

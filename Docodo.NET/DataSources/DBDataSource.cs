@@ -12,7 +12,7 @@ namespace Docodo
 {
     /* Data Source to index text & blob fields in database */
 
-    public abstract class DBDataSourceBase: IndexTextFilesDataSource
+    public abstract class DBDataSourceBase: QueuedDataSource<IIndexDocument>
     {
 
         public string ConnectString; // connection string to DB
@@ -47,30 +47,20 @@ namespace Docodo
                     break;
             }
             FieldName = "";
-            if (indextype.Contains(':'))
+            if (indextype.Contains(":"))
                 FieldName = indextype.Split(':')[1];
         }
 
-        private ConcurrentQueue<IIndexDocument> records = new ConcurrentQueue<IIndexDocument>();
-        bool NavDone = false;
-        bool Navigating = false;
-        CancellationTokenSource tokenSource { get; } = new CancellationTokenSource();
-        public CancellationToken cancellationToken { get => tokenSource.Token; }
-        // add to records Queue, called when need to enumerate all records in database or table
-        // use AddDocRecord to add record to queue, 
-        // check cancellationToken
-        public abstract void AddRecords();
-
         // Add document from or TEXT field
-        public virtual void AddRecord(string name,char[] buff, string fields)
+        public virtual void AddRecord(string name,char[] buff, string fields, ConcurrentQueue<IIndexDocument> queue)
         {
             if ((fields != null) && (!fields.Contains("Source=")))
                 fields += $"Source={Name}\n";
-            records.Enqueue(new IndexPagedTextFile(name,new string (buff),fields));
+            Enqueue(queue,new IndexPagedTextFile(name,new string (buff),fields));
         }
 
         // Add document from BLOB 
-        public virtual void AddRecord(string name, Stream stream, string fields)
+        public virtual void AddRecord(string name, Stream stream, string fields,ConcurrentQueue<IIndexDocument> queue)
         {
             bool isText = false;
             IIndexDocument doc = null;
@@ -121,10 +111,10 @@ namespace Docodo
                 }
 
           if (doc!=null)
-                records.Enqueue(doc);
+                Enqueue(queue,doc);
         }
         // Add document stored in file fname
-        public virtual void AddRecord(string name,string fname,string fields)
+        public virtual void AddRecord(string name,string fname,string fields,ConcurrentQueue<IIndexDocument> queue)
         {
             if (indexType != IndexType.File) throw new InvalidDataException("Adding record of wrong IndexType");
 
@@ -133,9 +123,9 @@ namespace Docodo
 
             IndexTextFilesDataSource.IndexedTextFile doc;
             if (fname.ToLower().EndsWith(".pdf"))
-                doc = new DocumentsDataSource.IndexPDFDocument(path + "\\" + fname, this);
+                doc = new DocumentsDataSource.IndexPDFDocument(Path + "\\" + fname, this);
             else
-                doc = new IndexedTextFile(path+"\\"+fname, this);
+                doc = new IndexTextFilesDataSource.IndexedTextFile(Path+"\\"+fname, this);
 
             doc.Name = name;
 
@@ -144,41 +134,14 @@ namespace Docodo
               doc.headers = ()=>{ return fields; };
             }
 
-            records.Enqueue(doc);
+           Enqueue(queue,doc);
         }
 
-        public override IIndexDocument Next(bool bwait)
+        protected override IIndexDocument DocumentFromItem(IIndexDocument item)
         {
-
-            IIndexDocument file;
-            while ((!records.TryDequeue(out file)) && (bwait) && (Navigating))
-            {
-                Thread.Sleep(100);
-            }
-
-            return file;
+            return item;
         }
 
-        public override void Reset()
-        {
-           if (!Navigating)
-            {
-                Task.Factory.StartNew(() =>
-                {
-                    Navigating = true;
-                    AddRecords();
-                    Navigating = false;
-                });
-
-            }
-
-        }
-
-        public override void Dispose()
-        {
-            tokenSource.Dispose();
-        }
-        
     }
 
     /* Data Source to index documents kept in blob fields 
@@ -192,10 +155,11 @@ namespace Docodo
     public class MySqlDBDocSource: DBDataSourceBase
     {
 
-        public MySqlDBDocSource(string name, string basepath, string connect, string select,string indextype) : base(name, basepath,connect,select,indextype)
+        public MySqlDBDocSource(string name, string basepath, string connect, string select, string indextype) : base(name, basepath, connect, select, indextype)
         {
+
         }
-        public override void AddRecords()
+        protected override void Navigate(ConcurrentQueue<IIndexDocument> queue, CancellationToken token)
         {
 
             MySqlConnection conn = new MySqlConnection(ConnectString);
@@ -205,6 +169,8 @@ namespace Docodo
 
             while (reader.Read())
             {
+                token.ThrowIfCancellationRequested();
+
                 StringBuilder builder = new StringBuilder();
                 string primaryname = "";
                 string name = "";
@@ -255,17 +221,17 @@ namespace Docodo
                 switch (indexType) {
                     case IndexType.File:
                     if (fname.Length > 0)
-                       AddRecord(name, fname, builder.ToString());
+                       AddRecord(name, fname, builder.ToString(),queue);
                         break;
                     case IndexType.Blob:
                         if (datastream != null)
                         {
-                            AddRecord(name, datastream, builder.ToString());
+                            AddRecord(name, datastream, builder.ToString(),queue);
                         }
                         break;
                     case IndexType.Text:
                         if (text.Length > 0)
-                            AddRecord(name, text.ToCharArray(), builder.ToString());
+                            AddRecord(name, text.ToCharArray(), builder.ToString(),queue);
                         break;
                 
                 }

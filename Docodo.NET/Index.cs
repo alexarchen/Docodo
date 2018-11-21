@@ -34,7 +34,7 @@ namespace Docodo
 {
 
 
-    public class Index 
+    public class Index : IDisposable
     {
         const int MAX_DEF_TMP_INDEXITEMS = 1000000; // Maximum items in tempindex
         const int MAX_WORD_LENGTH = 32;      // Maximum word length
@@ -44,13 +44,14 @@ namespace Docodo
         const int MAX_FOUND_PAGES = 30000; // maximum output found pages
         const int MAX_FOUND_DOCS = 500; // maximum output found docs
         const int MAX_FOUND_PAGES_IN_DOC = 1000; // maximum output found pages in one document
-        const char WORD_SUFFIX_CHAR = '$';
+        const char WORD_SUFFIX_CHAR = '$'; // char prefix of word stemming remainder
         const char SUFFIX_DEVIDER_CHAR = ':';
         const char WORD_BEGIN_CHAR = '<';
         const char WORD_END_CHAR = '>';
-        const char KNOWN_WORD_CHAR = '#';
-        const char FIELD_NAME_CHAR = '&';
+        const char KNOWN_WORD_CHAR = '#'; // char prefix to word nG from vocab
+        const char FIELD_NAME_CHAR = '&'; // char prefix to field name 
         const int MIN_WORD_LENGTH = 3;
+        const string DEFAULT_PATH = ".\\index\\"; // default path to store index files
         const float DOC_RANK_MULTIPLY = 10; // Rank multiplier when found in headers
 
         public IndexSequence GetTest(ulong i)
@@ -59,18 +60,21 @@ namespace Docodo
          }
 
         /* Index constructor
-         *   path - working folder, if set it will load 
-         *            autmatically, else set WorkPath before call to Load or Create
+         *   path - working folder, if set it will load index
+         *            autmatically, else set WorkPath before call to Load or CreateAsync
          *   InMemory - if true load into memory, else on disk         
          *   vocs - vocabs to use with index 
          */
-        public Index(string path=".", bool InMemory=false, Vocab []vocs=null)
+        public Index(string path=null, bool InMemory=false, Vocab []vocs=null)
         {
           
             MaxDegreeOfParallelism = 2;
             MaxTmpIndexItems = MAX_DEF_TMP_INDEXITEMS;
-            WorkPath = path;
-            if (path.Length > 0)
+            if (path != null)
+                WorkPath = path;
+            else WorkPath = DEFAULT_PATH;
+
+            if (path !=null)
                 Load(path);
             
             this.InMemory = InMemory;
@@ -86,12 +90,21 @@ namespace Docodo
         public bool CanSearch { get; private set; } = false; /* If index is loaded */
 
         ///  Stemmers table for string name
+        /*
         public static (string lang, Type type, string letters)[] Stemmers = {
                 ("ru",typeof (RussianStemmer),"А-Яа-яЁё"),
                 ("en",typeof (EnglishStemmer),"A-Za-z"),
                 ("us",typeof (EnglishStemmer),"A-Za-z"),
                 ("de",typeof (GermanStemmer),"A-Za-zẞßäüöÄÖÜ"),
                 ("fr",typeof (FrenchStemmer),"A-Za-zÉéÂâÀàÊêÈèËëÇçÎîÏïÔôÛûÙùÜüŸÿ")
+            };*/
+        public static (string lang, Type type)[] Stemmers = {
+                ("ru",typeof (RussianStemmer)),
+                ("en",typeof (EnglishStemmer)),
+                ("de",typeof (GermanStemmer)),
+                ("fr",typeof (FrenchStemmer)),
+                ("sp",typeof (SpanishStemmer)),
+                ("it",typeof (ItalianStemmer))
             };
 
 
@@ -101,6 +114,16 @@ namespace Docodo
             public List<ResultDocPage> foundPages = new List<ResultDocPage>();
             public bool Success = true;
             public string Error { get; protected set; } ="";
+            public override bool Equals(object obj)
+            {
+                if (obj.GetType()==typeof(SearchResult))
+                {
+                    SearchResult res = (SearchResult)obj;
+                    
+                    return (res.foundPages.SequenceEqual(foundPages));
+                }
+                return base.Equals(obj);
+            }
         }
 
         public class ErrorSearchResult: SearchResult
@@ -153,9 +176,18 @@ namespace Docodo
             public float rank;
             public List<int> pos = new List<int>(); // positions on the page
             public string text; //surrounding text
+            public override bool Equals(object obj)
+            {
+                if (obj.GetType().Equals(typeof(ResultDocPage)))
+                {
+                    ResultDocPage page = (ResultDocPage)obj;
+                    return (id == page.id) && (pos.SequenceEqual(page.pos));
+                }
+                return base.Equals(obj);
+            }
         }
 
-        private static string FromInt(int i) { return (KNOWN_WORD_CHAR + Convert.ToBase64String(new byte[] { (byte)((i >> 24) & 0xFF), (byte)((i >> 16) & 0xFF), (byte)((i >> 8) & 0xFF), (byte)((i) & 0xFF) }).TrimEnd('=')); }
+        private static string FromInt(int i) { return (KNOWN_WORD_CHAR + String.Format("{0:X}", i)); } // Convert.ToBase64String(new byte[] { (byte)((i >> 24) & 0xFF), (byte)((i >> 16) & 0xFF), (byte)((i >> 8) & 0xFF), (byte)((i) & 0xFF) }).TrimEnd('=')); }
 
         private IndexSequence LoadSequence(IndexSequence seq)
         {
@@ -184,7 +216,7 @@ namespace Docodo
         public HashSet<string> stopWords = new HashSet<string>();
         public void LoadStopWords(string file)
         {
-            stopWords = (from string s in File.ReadAllLines(file) where ((s.Trim(' ').Length>0) && (!s.Contains(';'))) select s).ToHashSet();
+            stopWords = new HashSet<string>((from string s in File.ReadAllLines(file) where ((s.Trim(' ').Length > 0) && (!s.Contains(';'))) select s).ToList());
         }
         public void AddStopWords(string [] words)
         {
@@ -262,7 +294,7 @@ namespace Docodo
                 foreach (Vocab voc in vocs)
                 {
                     // TODO: detect prefered language
-                    if ((voc != null) && (word[0] >= voc.Range[0]) && (word[0] <= voc.Range[1]))
+                    if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end))
                     {
                         stemmed = voc.Stem(word);
                         nG = voc.Search(stemmed);
@@ -441,7 +473,7 @@ namespace Docodo
             //            LambdaExpression e = Expression.Lambda(expr);
             //            IndexSequence tst = ((Func<IndexSequence>)e.Compile())();
 
-            if (!CanSearch) return (new ErrorSearchResult("Index is under rebuilding or absent"));
+            if (!CanSearch) return (new ErrorSearchResult("Index is not built"));
             try
             {
                 lock (DoSearchLock) // wait antil can search
@@ -469,7 +501,7 @@ namespace Docodo
                     int R = 255;
                     if (opt != null) R = opt.dist;
 
-                    Func<string, IndexSequence> Get = (word) => { IndexSequence seq = SearchWord(word); seq.R = Math.Sign(R) * (word.Length / SUBWORD_LENGTH + Math.Abs(R)); return (seq); };
+                    Func<string, IndexSequence> Get = (word) => { IndexSequence seq = SearchWord(word); seq.R = Math.Sign(R) * (word.Length + Math.Abs(R)); return (seq); };
                     Func<string, IndexSequence> GetField = (namevalue) => {
                         // Search by field name=value using OR combinatin operator for value subwords
                         string name = namevalue.Split('=')[0];
@@ -565,7 +597,7 @@ namespace Docodo
                             
                         }
 
-                        result.foundDocs = (from doc in result.foundDocs orderby doc.rank select doc).ToHashSet();
+                        result.foundDocs = new HashSet<ResultDocument>((from doc in result.foundDocs orderby doc.rank select doc).ToArray());
 
                         return result;
 
@@ -678,15 +710,17 @@ namespace Docodo
         };
 
         public Status status { get; private set; }
-
+        public bool IsCreating { get => status != Status.Idle; }
         private object DoSearchLock = new object();
 
         private IIndexDataSource[] sources;
         public int nDataSources { get => sources!=null?sources.Length:0; }
         public bool CanIndex { get => (nDataSources > 0); }
+
+        const string CACHE_END = ".cache.zip";
         public void AddDataSource(IIndexDataSource source)
         {
-            source = new IndexTextCacheDataSource(source, WorkPath + "\\" + source.Name + ".cache.zip");
+            source = new IndexTextCacheDataSource(source, WorkPath + "\\" + source.Name + CACHE_END);
             if (sources == null) { sources = new IIndexDataSource[1]; sources[0] = source; }
             else
             {
@@ -696,9 +730,9 @@ namespace Docodo
             
         }
 
-        public Task Create()
+        public async Task CreateAsync()
         {
-            if ((sources==null) || (sources.Length==0) || (sources[0]==null)) return null;
+            if ((sources == null) || (sources.Length == 0) || (sources[0] == null)) { return; }// Task.FromException(new Exception("No data sources")); }
 
             if (status == Status.Idle)
             { //first time
@@ -709,50 +743,84 @@ namespace Docodo
                 cancelationToken  = new CancellationTokenSource();
                 po.CancellationToken = cancelationToken.Token;
 
-                return (Task.Factory.StartNew(() =>
+                await (Task.Run(async () =>
                 {
-                    try
+                try
+                {
+
+                    if (Directory.Exists(WorkPath))
+                        foreach (string dir in Directory.GetDirectories(WorkPath))
+                            Directory.Delete(dir, true);
+                    else
+                        Directory.CreateDirectory(WorkPath);
+
+
+                    List<Task> tasks = new List<Task>();
+
+
+                        List<IIndexDataSource> tmpSources = new List<IIndexDataSource>();
+                    foreach (IIndexDataSource source in sources)
                     {
-
-                        if (Directory.Exists(WorkPath))
-                            foreach (string dir in Directory.GetDirectories(WorkPath))
-                                Directory.Delete(dir, true);
-                        else
-                            Directory.CreateDirectory(WorkPath);
-
-
-                        List<Task> tasks = new List<Task>();
-
-
-                        foreach (IIndexDataSource source in sources)
+                        IIndexDataSource tmpsource = source;
+                        if (source.GetType().Equals(typeof(IndexTextCacheDataSource)))
                         {
-                            source.Reset();
-                            for (int q = 0; q < Math.Max(1, MaxDegreeOfParallelism); q++)
-                                tasks.Add(Task.Factory.StartNew(() => { IndexTask(source); }, po.CancellationToken));
+                            tmpsource = new IndexTextCacheDataSource(((IndexTextCacheDataSource)source).source, WorkPath + "\\" + source.Name + CACHE_END + "_");
+                            tmpSources.Add(tmpsource);
+
                         }
 
-                        status = Status.Index;
-                        Task.WaitAll(tasks.ToArray(), po.CancellationToken);
-                        Console.WriteLine("Index finished");
+                        tmpsource.Reset();
+                        for (int q = 0; q < Math.Max(1, MaxDegreeOfParallelism); q++)
+                            tasks.Add(Task.Factory.StartNew(() => { IndexTask(tmpsource);}, po.CancellationToken));
+                    }
+                    
+                    status = Status.Index;
+                    await Task.WhenAll(tasks.ToArray());//, po.CancellationToken);
+                    Console.WriteLine("Index finished");
 
-                        foreach (IIndexDataSource source in sources)
-                            source.Dispose();
+                    // dispose temporaty sources
+                    foreach (IIndexDataSource source in tmpSources)
+                       source.Dispose();
 
-                        // Next parallel Merge 
-                        status = Status.Merge;
-                        foreach (string dir in Directory.GetDirectories(WorkPath))
-                            MergeAll(dir);
-                        // Overall Merge
-                        Console.WriteLine("Final merge...");
-                        ArrayList files = new ArrayList();
-                        foreach (string dir in Directory.GetDirectories(WorkPath))
+                    // Next parallel Merge 
+                    status = Status.Merge;
+                    foreach (string dir in Directory.GetDirectories(WorkPath))
+                        MergeAll(dir);
+                    // Overall Merge
+                    Console.WriteLine("Final merge...");
+                    ArrayList files = new ArrayList();
+                    foreach (string dir in Directory.GetDirectories(WorkPath))
+                    {
+                        string[] f = Directory.GetFiles(dir, "*.tmpind");
+                        if (f.Length > 0) files.Add(f[0]);
+                    }
+
+                    MergeIndexes((String[])files.ToArray(typeof(string)), WorkPath + "\\" + ".index");
+         
+                     //CanSearch now false   
+
+                        // exchanging datasources
+                        lock (DoSearchLock)
                         {
-                            string[] f = Directory.GetFiles(dir, "*.tmpind");
-                            if (f.Length > 0) files.Add(f[0]);
+                            List<IIndexDataSource> ds = new List<IIndexDataSource>();
+                            foreach (IIndexDataSource source in sources)
+                            {
+                                if (source.GetType().Equals(typeof(IndexTextCacheDataSource)))
+                                {
+                                    source.Dispose(); // free resources
+                                    File.Delete(WorkPath + "\\" + source.Name + CACHE_END);
+                                    File.Move(WorkPath + "\\" + source.Name + CACHE_END + "_", WorkPath + "\\" + source.Name + CACHE_END);
+                                    ds.Add(new IndexTextCacheDataSource(((IndexTextCacheDataSource)source).source, WorkPath + "\\" + source.Name + CACHE_END));
+                                }
+                                else ds.Add(source);
+
+
+                            }
+                            sources = ds.ToArray();
                         }
 
-                        MergeIndexes((String[])files.ToArray(typeof(string)), WorkPath + "\\" + ".index");
-                        var numbers = new[] { 1, 2, 3, 4, 5 };
+                        Load(WorkPath);
+                        CanSearch = true;
 
                         Array.ForEach(Directory.GetDirectories(WorkPath), i => Directory.Delete(i, true));
 
@@ -763,13 +831,14 @@ namespace Docodo
                     catch (Exception e)
                     {
                       Console.WriteLine("Error: "+e.Message);
+                      status = Status.Idle;
+                      CanSearch = false;
+                       
                     }
                     cancelationToken = null;
                 }, cancelationToken.Token));
 
             }
-
-            return (Task.Factory.StartNew(() => { /* empty */ }));
 
 
         }
@@ -838,11 +907,13 @@ namespace Docodo
 
 
                 string[] s = new string[files.Length]; // next words
-                Array.Fill(s, " ");
+                for (int q = 0; q < s.Length; q++) s[q] = " ";
+                
                 int[] n = new int[files.Length]; // numbers of coords in vectors
                 uint[][] arr = new uint[files.Length][]; // coord arrays
                 bool[] readnext = new bool[files.Length]; // what index read next
-                Array.Fill(readnext, true); // need to read from each index first
+                //Array.Fill(readnext, true); // need to read from each index first
+                for (int q = 0; q < readnext.Length; q++) readnext[q] = true;
 
                 var s_end = from str in s where str.Length != 0 select str;
                 
@@ -882,7 +953,10 @@ namespace Docodo
                         }
                         return (i);
                     }));
-                    Array.Fill(readnext, false);
+                    //Array.Fill(readnext, false); // .Net Core method
+                    for (int q = 0; q < readnext.Length; q++)
+                        readnext[q] = false;
+
                     if (list.Count > 0)
                     {
                         readnext[list[0].Value] = true;
@@ -976,6 +1050,8 @@ namespace Docodo
 
                 lock (DoSearchLock) // stop all seach tasks before replacing index
                 {
+                    CanSearch = false;
+                }
                     if (File.Exists(output + ".list")) File.Delete(output + ".list");
                     BinaryWriter binOut = new BinaryWriter(File.Create(output + ".list"));
                     PagesList.Save(binOut);
@@ -985,10 +1061,7 @@ namespace Docodo
                     Close();
                     if (File.Exists(output)) File.Delete(output);
                     File.Move(output + "_", output);
-
-                    Load(new FileInfo(output).DirectoryName);
-
-                }
+                
 
 
                 foreach (string file in files) File.Delete(file);
@@ -1239,6 +1312,7 @@ namespace Docodo
                     
                     foreach (IndexPage page in doc)
                     {
+                    
                         try
                         {
                             String c = page.text.ToLower(); 
@@ -1336,6 +1410,8 @@ namespace Docodo
             {
                 Console.WriteLine($"Exception in Task{Task.CurrentId}: " + e.Message);
             }
+
+
             Console.WriteLine($"Task{Task.CurrentId} exited");
         }
 
@@ -1352,7 +1428,7 @@ namespace Docodo
 
             foreach (Vocab voc in vocs)
             {
-                if ((voc != null) && (ss[0] >= voc.Range[0]) && (ss[0] <= voc.Range[1]) && ((stemmed = voc.Stem(ss)) != null) && ((nG = voc.Search(stemmed)) != 0))
+                if ((voc != null) && (ss[0] >= voc.Range.begin) && (ss[0] <= voc.Range.end) && ((stemmed = voc.Stem(ss)) != null) && ((nG = voc.Search(stemmed)) != 0))
                 {
                     // writing group number rather then parts of the word
 
@@ -1391,5 +1467,20 @@ namespace Docodo
 
         }
 
+        /* Call to free all resources used by index */
+        public void Dispose()
+        {
+            CanSearch = false;
+            foreach (IIndexDataSource source in sources)
+              if (source.GetType()==typeof(IndexTextCacheDataSource))
+            {
+                    source.Dispose();
+            }
+            sources = new IIndexDataSource[] { };
+            vocs.Clear();
+            stopWords.Clear();
+            self.Clear();
+            reader.Dispose();
+        }
     }
 }

@@ -1,11 +1,14 @@
 # DOCODO 
-Documental full-text document search engine library written on C#
+Documental full-text document search engine .NET library written on C#
 
 Copyright (c) Alexey A. Zakharchenko
 GNU GPL 3
 
-# Features!
+# Features
 
+  - Supports documents and pages
+  - Search exact word positions on page
+  - Search closely placed words up to exact phrase
   - Fast indexing from different sources: files, http, DB
   - Search with vocabularies and stemmers
   - Morphological and "exact" search
