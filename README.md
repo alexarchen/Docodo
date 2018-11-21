@@ -1,17 +1,24 @@
 # DOCODO 
 Documental full-text search engine server & library written on C#
+for NET.Core 
 
 Copyright (c) Alexey A. Zakharchenko
 GNU GPL 3
 
-# Features!
+# Features
 
+  - Supports documents and pages
+  - Search exact word positions on page
+  - Search closely placed words up to exact phrase
   - Fast indexing from different sources: files, http, DB
-  - Search with vocabularies and stemmators
+  - Search with vocabularies and stemmers
   - Morphological and "exact" search
-  - Console, link, RESTful interface
 
 # Using 
+
+DOCODO is NET.Core application based on DOCODO.NET NET.Standard library
+https://github.com/alexarchen/Docodo/tree/master/Docodo.NET
+
 ## As Console app
 Run application and follow instuctions
 You can create index and search from console

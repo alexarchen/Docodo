@@ -1,5 +1,6 @@
-# DOCODO 
+# DOCODO.NET
 Documental full-text document search engine .NET library written on C#
+using NET.Standard2.0
 
 Copyright (c) Alexey A. Zakharchenko
 GNU GPL 3
@@ -13,14 +14,18 @@ GNU GPL 3
   - Search with vocabularies and stemmers
   - Morphological and "exact" search
 
-Библиотека .NET полнотестовый документального поиска, написанная на C#
+Библиотека Standard полнотестового документального поиска, написанная на C#
+Под .NET.Standard2.0
 
 # Характеристики
+- Поддержка страниц документов
+- Поиск точных координат слов на странице
+- Поиск с учетом дистанции между словами, включая поиск точной фразы
 - Быстрое индексирование из различных источников документов: файлы, http, БД
 - Поиск со словарями и стемматорами
 - Морфологический и "точный" поиск
 
-# Intalling
+# Intalling for NET.Core
 
 dotnet install DOCODO.NET
 
@@ -34,25 +39,22 @@ dotnet install DOCODO.NET
  Add vocs, you can take vocs from https://github.com/alexarchen/Docodo/tree/master/Dict
 
 ```sh
-    List<Vocab> vocs = new List<Vocab>();
     foreach (string file in Directory.GetFiles("Dict\\", "*.voc"))
      {
-      vocs.Add(new Vocab(file));
+      index.AddVoc(new Vocab(file));
      }
-   index.vocs = vocs.ToArray();
    index.LoadStopWords("Dict\\stop.txt");
 ```
  Add datasources, for example to index c:\
  
 ```sh
- index.AddDataSource(new IndexTextCacheDataSource(new DocumentsDataSource("doc", "c:\\"), ind.WorkPath + "\\textcache.zip"));
+ index.AddDataSource(new DocumentsDataSource("doc", "c:\\"));
 ```
  Now you can index
 
 
 ```sh
-  Task ret = ind.Create();
-  ret.Wait();
+  await ind.CreateAsync();
 ```
   and search
 
@@ -63,3 +65,5 @@ dotnet install DOCODO.NET
  }
 
 ```
+
+Read Wiki for more details
