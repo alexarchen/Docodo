@@ -38,8 +38,9 @@ namespace Docodo
          IEnumerator  IEnumerable.GetEnumerator(){
             return GetEnumerator();
         }
-
-        public int MinCount=>self.Count;
+        // only for this[] operator, returns number of internal ushort sequence
+        // use LINQ Count() instead to calculate true lengths of sequence
+        public int Count=>self.Count;
         public class Builder {
             IndexSequence seq = new IndexSequence();
             private ulong Last = 0;
@@ -59,12 +60,12 @@ namespace Docodo
             }
             public Builder Add(ulong l){
                 if (l<Last) throw new InvalidDataException("Must add ascending values");
-                if (l-Last<=(ulong)min) return this; // check for min distance
-                // define base
+                if ((l-Last<=(ulong)min) && (seq.Count>0)) return this; // check for min distance
+                
                 ulong diff =l-Last;
                 do{
                     seq.self.Add((ushort)((diff>MASK?OVERFLOW:0)|((ushort)((diff&MASK)))));
-                    diff>>=15;
+                    diff>>=BITS;
                 }
                 while (diff>0);
                 Last = l;
@@ -111,7 +112,7 @@ namespace Docodo
                     if (enumerator.MoveNext()){
                          ushort value = enumerator.Current;
                          bNeedMore = (value&OVERFLOW)!=0;
-                         Last+=(((ulong)(value&MASK))>>shift);
+                         Last+=(((ulong)(value&MASK))<<shift);
                          shift+=BITS;
                      }
                      else return false;
@@ -146,6 +147,7 @@ namespace Docodo
         }
 
         List<ushort> self = new List<ushort>(); 
+        // index i < Count
         public ushort this[int i]{ get => self[i];}
 
         public bool order { get => R < 0; }

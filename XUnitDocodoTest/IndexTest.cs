@@ -180,7 +180,7 @@ namespace XUnitDocodoTest
                     Assert.Equal(Index.Status.Idle, vocindex.status);
                     Assert.True(vocindex.CanSearch);
 
-                    Assert.Equal(Regex.Matches(TestText1.ToLower(), @"\band\b").Count * 2 * Npages, vocindex["#1"].MinCount);
+                    Assert.Equal(Regex.Matches(TestText1.ToLower(), @"\band\b").Count * 2 * Npages, vocindex["#1"].Count());
 
                     Assert.True(vocindex.Search("Tupman").Equals(index.Search("Tupman")));
                     Assert.True(vocindex.Search("and").Equals(index.Search("and")));
