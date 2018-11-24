@@ -54,10 +54,6 @@ namespace Docodo
         const string DEFAULT_PATH = ".\\index\\"; // default path to store index files
         const float DOC_RANK_MULTIPLY = 10; // Rank multiplier when found in headers
 
-        public IndexSequence GetTest(ulong i)
-         {
-            return new IndexSequence((new ulong[] { i }));
-         }
 
         /* Index constructor
          *   path - working folder, if set it will load index
@@ -193,12 +189,16 @@ namespace Docodo
         {
             if (reader != null)
             {
-                reader.BaseStream.Seek((long)seq[1], SeekOrigin.Begin);
-                int len = (int)seq[0];
-                byte[] buffer = new byte[len * 4];
-                reader.BaseStream.Read(buffer, 0, len * 4);
-                uint[] arr = new uint[len];
-                Buffer.BlockCopy(buffer, 0, arr, 0, len*4);
+                IEnumerator<ulong> e = seq.GetEnumerator();
+                e.MoveNext();
+                int len = (int) e.Current;
+                e.MoveNext();
+                long off = (long) e.Current;
+                reader.BaseStream.Seek(off, SeekOrigin.Begin);
+                byte[] buffer = new byte[len * 2];
+                reader.BaseStream.Read(buffer, 0, len * 2);
+                ushort[] arr = new ushort[len];
+                Buffer.BlockCopy(buffer, 0, arr, 0, len*2);
                 return (new IndexSequence(arr));
 
             }
@@ -319,8 +319,10 @@ namespace Docodo
                         else res *= this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
                         res.R = -(q + 1);
                     }
-                    IndexSequence newres = new IndexSequence();
-                    if (res.Count > 1)
+                    IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
+                    newres.AddRange(res);
+/*                   
+                    if (res.MinCount > 1)
                     {
                         ulong prevc = res[0];
                         newres.Add(prevc);
@@ -329,8 +331,8 @@ namespace Docodo
                             if (c - prevc > (ulong)Math.Abs(res.R)) newres.Add(c);
                             prevc = c;
                         }
-                    }
-                    return (newres);
+                    }*/
+                    return (newres.build());
                 }
 
             }
@@ -652,14 +654,14 @@ namespace Docodo
                             {
                                 if (InMemory)
                                 {
-                                    uint[] arr = new uint[n];
+                                    ushort[] arr = new ushort[n];
                                     byte[] bytes = bin.ReadBytes(n * sizeof(int));
-                                    Buffer.BlockCopy(bytes, 0, arr, 0, n * sizeof(uint));
+                                    Buffer.BlockCopy(bytes, 0, arr, 0, n * sizeof(ushort));
                                     self.Add(s, new IndexSequence(arr));
                                 }
                                 else
                                 {
-                                    self.Add(s, new IndexSequence(new ulong[] { (ulong)n, (ulong)bin.BaseStream.Position }));
+                                    self.Add(s, new IndexSequence.Builder().Add((ulong)n).Add((ulong)bin.BaseStream.Position).build());
                                     bin.BaseStream.Seek(n * sizeof(uint), SeekOrigin.Current);
                                 }
                             }
