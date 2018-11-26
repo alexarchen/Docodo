@@ -1480,7 +1480,8 @@ namespace Docodo
             vocs.Clear();
             stopWords.Clear();
             self.Clear();
-            reader.Dispose();
+            if (reader!=null)
+              reader.Dispose();
         }
     }
 }
