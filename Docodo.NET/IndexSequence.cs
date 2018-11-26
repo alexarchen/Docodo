@@ -5,6 +5,8 @@ using System.IO;
 
 namespace Docodo
 {
+    //sequence of ascending ulong values that internaly stores encoded ushorts
+    // for internal use with Index only 
     public class IndexSequence : IEnumerable<ulong>
     {
         
@@ -153,6 +155,37 @@ namespace Docodo
         public bool order { get => R < 0; }
         public int R = 0; // distance between words
        // List<byte> Rank = new List<byte>();
+
+
+        public void Write(BinaryWriter bin)
+        {
+          bin.Write(self.Count);
+          
+          foreach (ushort s in self)
+           bin.Write(s);
+        }
+
+        public void Read(BinaryReader read){
+            int n = read.ReadInt32();
+            ushort [] arr = new ushort[n];
+            byte[] bytes = read.ReadBytes(sizeof(ushort) * n);
+            Buffer.BlockCopy(bytes, 0, arr, 0, sizeof(ushort) * n);
+            self = new List<ushort>(arr);
+        }
+
+        // shift all values 
+        public void Shift(ulong shift){
+            // TODO: Speed up by replacing only first value
+            if (Count==0) return;
+            var en = this.GetEnumerator();
+            en.MoveNext(); 
+            IndexSequence s = new Builder().Add(shift+en.Current);
+            int q=0;
+            do{}while ((self[q++]&MASK)!=0);
+            // replacing first value
+            self.RemoveRange(0,q);
+            self.InsertRange(0,s.self);
+        }
 
         // Combine two parts of words, order does matter
         public static IndexSequence operator *(IndexSequence seq1, IndexSequence seq2)

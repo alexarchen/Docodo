@@ -909,10 +909,14 @@ namespace Docodo
 
 
                 string[] s = new string[files.Length]; // next words
-                for (int q = 0; q < s.Length; q++) s[q] = " ";
+                IndexSequence[] arr = new IndexSequence[files.Length]; // coord arrays
+
+                for (int q = 0; q < s.Length; q++) {
+                    s[q] = " ";
+                    arr[q] = new IndexSequence();
+                }
                 
                 int[] n = new int[files.Length]; // numbers of coords in vectors
-                uint[][] arr = new uint[files.Length][]; // coord arrays
                 bool[] readnext = new bool[files.Length]; // what index read next
                 //Array.Fill(readnext, true); // need to read from each index first
                 for (int q = 0; q < readnext.Length; q++) readnext[q] = true;
@@ -927,11 +931,8 @@ namespace Docodo
                             try
                             {
                                 s[q] = bins[q].ReadString();
-                                n[q] = bins[q].ReadInt32();
-                                arr[q] = new uint[n[q]];
+                                arr[q].Read(bins[q]);
 
-                                byte[] bytes = bins[q].ReadBytes(sizeof(uint) * n[q]);
-                                Buffer.BlockCopy(bytes, 0, arr[q], 0, sizeof(uint) * n[q]);
                             }
                             catch (EndOfStreamException e)
                             {
@@ -978,10 +979,8 @@ namespace Docodo
                             {
                                 // write coord array
                                 //TODO!!!! For large bases  (uint)(shifts[q]) doen't work 
-                                if (shift_coords) { for (int w = 0; w < arr[q].Length; w++) arr[q][w] += (uint)(shifts[q]); }
-                                byte[] arrbytes = new byte[n[q] * sizeof(int)];
-                                Buffer.BlockCopy(arr[q], 0, arrbytes, 0, n[q] * sizeof(int));
-                                wr.Write(arrbytes);
+                                if (shift_coords) { arr[q].Shift(shifts[q]); } //for (int w = 0; w < arr[q].Length; w++) arr[q][w] += (uint)(shifts[q]); }
+                                arr[q].Write(wr);
                             }
 
                     }
@@ -1207,7 +1206,7 @@ namespace Docodo
 
         /* Thread Safe temporary index class */
         /* Temporary indexes then merged into final index */
-        class TempIndex : SortedList<string, List<uint>>
+        class TempIndex : SortedList<string, IndexSequence.Builder>
         {
             public int nTmpIndex = 0;
 
@@ -1226,13 +1225,13 @@ namespace Docodo
 
             /* Add word into TemIndex
              * coord must be greater with each call */
-            public void Add(string word, uint coord)
+            public void Add(string word, ulong coord)
             {
                 maxCoord = coord; // coord increases with each call
-                List<uint> val;
+                IndexSequence.Builder val;
                 if (!base.TryGetValue(word, out val))
                 {
-                    val = new List<uint>();
+                    val = new IndexSequence.Builder();
                     base.Add(word, val);
                 }
                 val.Add(coord);
@@ -1254,15 +1253,11 @@ namespace Docodo
                     BinaryWriter bin = new BinaryWriter(file);
                     bin.Write(maxCoord);
 
-                    foreach (KeyValuePair<string, List<uint>> item in this)
+                    foreach (KeyValuePair<string, IndexSequence.Builder> item in this)
                     {
                         bin.Write(item.Key);
-                        bin.Write(item.Value.Count);
-                        // TODO: convert ot bytes
-                        item.Value.ForEach((i) =>
-                        {
-                            bin.Write(i);
-                        });
+                        IndexSequence seq = item.Value;
+                        seq.Write(bin);
                     }
 
                     bin.Close();
