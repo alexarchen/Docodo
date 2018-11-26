@@ -732,9 +732,13 @@ namespace Docodo
             
         }
 
+        event EventHandler CreationDone;
+
+
+      
         public async Task CreateAsync()
         {
-            if ((sources == null) || (sources.Length == 0) || (sources[0] == null)) { return; }// Task.FromException(new Exception("No data sources")); }
+            if ((sources == null) || (sources.Length == 0) || (sources[0] == null)) { if (CreationDone!=null) CreationDone(this,new EventArgs()); return; }// Task.FromException(new Exception("No data sources")); }
 
             if (status == Status.Idle)
             { //first time
@@ -841,8 +845,8 @@ namespace Docodo
                 }, cancelationToken.Token));
 
             }
-
-
+ 
+           if (CreationDone!=null) CreationDone(this,new EventArgs());
         }
 
         /* Merge all files in subfolders */
@@ -978,7 +982,7 @@ namespace Docodo
                             if (readnext[q])
                             {
                                 // write coord array
-                                //TODO!!!! For large bases  (uint)(shifts[q]) doen't work 
+                          
                                 if (shift_coords) { arr[q].Shift(shifts[q]); } //for (int w = 0; w < arr[q].Length; w++) arr[q][w] += (uint)(shifts[q]); }
                                 arr[q].Write(wr);
                             }
@@ -1477,7 +1481,8 @@ namespace Docodo
             vocs.Clear();
             stopWords.Clear();
             self.Clear();
-            reader.Dispose();
+            if (reader!=null)
+             reader.Dispose();
         }
     }
 }

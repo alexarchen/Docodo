@@ -28,6 +28,12 @@ namespace XUnitDocodoTest
         [Fact]
         public void ShiftTest()
         {
+          // simple
+          IndexSequence test = new IndexSequence.Builder().Add(62);
+          test.Shift(0);
+          Assert.Equal(test[0],62);
+          Assert.Equal(test.First(),(ulong)62);
+
           List<ulong> list = CreateList(100);
           list.Insert(0,0); // firt is 0
           IndexSequence seq = new IndexSequence.Builder().AddRange(list);

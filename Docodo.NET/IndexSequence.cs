@@ -175,16 +175,16 @@ namespace Docodo
 
         // shift all values 
         public void Shift(ulong shift){
-            // TODO: Speed up by replacing only first value
-            if (Count==0) return;
+            if ((Count==0) || (shift==0)) return;
             var en = this.GetEnumerator();
             en.MoveNext(); 
             IndexSequence s = new Builder().Add(shift+en.Current);
             int q=0;
-            do{}while ((self[q++]&MASK)!=0);
+            do{}while ((self[q++]&OVERFLOW)!=0);
             // replacing first value
             self.RemoveRange(0,q);
             self.InsertRange(0,s.self);
+           
         }
 
         // Combine two parts of words, order does matter

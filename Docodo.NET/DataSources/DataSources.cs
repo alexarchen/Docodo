@@ -42,6 +42,28 @@ namespace Docodo
             id = _id;
             text = _text;
         }
+        
+        // for 0, header page returns map of fields
+        public Dictionary<string,object> ConvertToObject(){
+            Dictionary<string,object> ret = new Dictionary<string,object> ();
+            StringReader sr = new StringReader(text);
+            string line = "";
+            while ((line = sr.ReadLine())!=null){
+              string [] vals = line.Split('=');
+              if (vals.Length==2){
+
+                if (Regex.Match(vals[1],"[+-]?[0-9]+").Success)
+                 ret.Add(vals[0],long.Parse(vals[1]));
+                 else
+                if (Regex.Match(vals[1],@"[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)").Success)
+                 ret.Add(vals[0],decimal.Parse(vals[1]));
+                 else
+                 ret.Add(vals[0],vals[1]);
+              }
+            }
+
+            return ret;
+        }
     };
 
     public interface IIndexDocument : IEnumerable<IndexPage>, IDisposable
