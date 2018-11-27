@@ -1,38 +1,191 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections;
+using System.IO;
 
 namespace Docodo
 {
-    public class IndexSequence : List<ulong>
+    //sequence of ascending ulong values that internaly stores encoded ushorts
+    // for internal use with Index only 
+    public class IndexSequence : IEnumerable<ulong>
     {
-        const ulong AND_INCREASE = 0x80000000;
-        const ulong AND_MASK = (AND_INCREASE - 1);
-
+        
+        const short BITS = 15;
+        const ushort OVERFLOW = 1<<BITS;
+        const ushort MASK = OVERFLOW-1;
         public IndexSequence() : base()
         {
 
         }
 
-        public IndexSequence(IEnumerable<ulong> arr) : base(arr)
+        public IndexSequence(IndexSequence seq) 
         {
+            self = new List<ushort>(seq.self);
 
         }
 
-        public IndexSequence(IEnumerable<uint> arr) : base()
+        public IndexSequence(IEnumerable<ushort> arr) 
         {
-            ulong _base = 0;
-            foreach (uint el in arr)
+           self = new List<ushort>(arr);
+        }
+
+
+        public IEnumerator<ulong> GetEnumerator()
+        {
+
+            return new SeqEnumerator(this);
+
+        }
+
+         IEnumerator  IEnumerable.GetEnumerator(){
+            return GetEnumerator();
+        }
+        // only for this[] operator, returns number of internal ushort sequence
+        // use LINQ Count() instead to calculate true lengths of sequence
+        public int Count=>self.Count;
+        public class Builder {
+            IndexSequence seq = new IndexSequence();
+            private ulong Last = 0;
+            private int min = 0;
+
+            // min is minimum diffenrece between added elements,
+            // if distance is less then no addition performed
+            public Builder(int min=0){
+                this.min = min;
+            }
+
+            public int R {get => seq.R; set => seq.R = value;}
+
+            public Builder SetR(int r){
+                R = r;
+                return this;
+            }
+            public Builder Add(ulong l){
+                if (l<Last) throw new InvalidDataException("Must add ascending values");
+                if ((l-Last<=(ulong)min) && (seq.Count>0)) return this; // check for min distance
+                
+                ulong diff =l-Last;
+                do{
+                    seq.self.Add((ushort)((diff>MASK?OVERFLOW:0)|((ushort)((diff&MASK)))));
+                    diff>>=BITS;
+                }
+                while (diff>0);
+                Last = l;
+            return (this);
+            }
+
+            public Builder AddRange(IEnumerable<ulong> range){
+                foreach (ulong v in range)
+                 Add (v);
+             return (this);
+            }
+
+
+            public IndexSequence build()
             {
-                if (el == 0xFFFFFFFF) _base += AND_INCREASE;
-                else
-                Add(_base + el);
+             return seq;
+            }
+
+            public static implicit operator IndexSequence (IndexSequence.Builder bild){
+                return bild.build();
+            }
+
+        }
+
+        public class SeqEnumerator : IEnumerator<ulong>
+        {
+            private IndexSequence _seq;
+            ulong Last =0;
+            IEnumerator<ushort> enumerator;
+            public SeqEnumerator(IndexSequence seq){
+                _seq = seq;
+                Reset();
+            }
+
+            public bool MoveNext(){
+                if (enumerator!=null){
+
+                    bool bNeedMore = false;
+                    int shift = 0;
+
+                    do{
+
+                    
+                    if (enumerator.MoveNext()){
+                         ushort value = enumerator.Current;
+                         bNeedMore = (value&OVERFLOW)!=0;
+                         Last+=(((ulong)(value&MASK))<<shift);
+                         shift+=BITS;
+                     }
+                     else return false;
+
+                    }while (bNeedMore);
+
+                    return true;
+                }
+                return false;
+            }
+
+            public object Current {get => Current;}
+            ulong IEnumerator<ulong>.Current {
+                get{
+
+                return Last;
 
             }
+            }
+
+            public  void Reset(){
+              Last=0;
+              if (enumerator!=null) enumerator.Dispose();
+              enumerator = _seq.self.GetEnumerator();
+            }
+
+            public void Dispose(){
+              if (enumerator!=null) enumerator.Dispose();
+              enumerator = null;
+            }
+
         }
+
+        List<ushort> self = new List<ushort>(); 
+        // index i < Count
+        public ushort this[int i]{ get => self[i];}
 
         public bool order { get => R < 0; }
         public int R = 0; // distance between words
        // List<byte> Rank = new List<byte>();
+
+
+        public void Write(BinaryWriter bin)
+        {
+          bin.Write(self.Count);
+          
+          foreach (ushort s in self)
+           bin.Write(s);
+        }
+
+        public void Read(BinaryReader read){
+            int n = read.ReadInt32();
+            ushort [] arr = new ushort[n];
+            byte[] bytes = read.ReadBytes(sizeof(ushort) * n);
+            Buffer.BlockCopy(bytes, 0, arr, 0, sizeof(ushort) * n);
+            self = new List<ushort>(arr);
+        }
+
+        // shift all values 
+        public void Shift(ulong shift){
+            if ((Count==0) || (shift==0)) return;
+            var en = this.GetEnumerator();
+            en.MoveNext(); 
+            IndexSequence s = new Builder().Add(shift+en.Current);
+            int q=0;
+            do{}while ((self[q++]&OVERFLOW)!=0);
+            // replacing first value
+            self.RemoveRange(0,q);
+            self.InsertRange(0,s.self);
+           
+        }
 
         // Combine two parts of words, order does matter
         public static IndexSequence operator *(IndexSequence seq1, IndexSequence seq2)
@@ -53,7 +206,7 @@ namespace Docodo
             
             uint absR = (uint)Math.Abs(seq1.R);
             int R = seq1.R;
-            IndexSequence newSeq = new IndexSequence();
+            IndexSequence.Builder newSeq = new IndexSequence.Builder();
             //List<byte> newRank = newSeq.Rank;
             newSeq.R = seq1.R;
             List<ulong> newGroup = new List<ulong>();
@@ -116,7 +269,7 @@ namespace Docodo
         // combine results by logical OR
         public static IndexSequence operator +(IndexSequence seq1, IndexSequence seq2)
         {
-            IndexSequence res = new IndexSequence();
+            IndexSequence.Builder res = new IndexSequence.Builder();
             //res.Capacity = Math.Max(seq1.Count, seq2.Count);
             IEnumerator<ulong> [] seqe = { seq1.GetEnumerator(), seq2.GetEnumerator() };
             bool[] Move = { true, true };

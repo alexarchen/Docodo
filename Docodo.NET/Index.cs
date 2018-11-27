@@ -54,10 +54,6 @@ namespace Docodo
         const string DEFAULT_PATH = ".\\index\\"; // default path to store index files
         const float DOC_RANK_MULTIPLY = 10; // Rank multiplier when found in headers
 
-        public IndexSequence GetTest(ulong i)
-         {
-            return new IndexSequence((new ulong[] { i }));
-         }
 
         /* Index constructor
          *   path - working folder, if set it will load index
@@ -193,12 +189,16 @@ namespace Docodo
         {
             if (reader != null)
             {
-                reader.BaseStream.Seek((long)seq[1], SeekOrigin.Begin);
-                int len = (int)seq[0];
-                byte[] buffer = new byte[len * 4];
-                reader.BaseStream.Read(buffer, 0, len * 4);
-                uint[] arr = new uint[len];
-                Buffer.BlockCopy(buffer, 0, arr, 0, len*4);
+                IEnumerator<ulong> e = seq.GetEnumerator();
+                e.MoveNext();
+                int len = (int) e.Current;
+                e.MoveNext();
+                long off = (long) e.Current;
+                reader.BaseStream.Seek(off, SeekOrigin.Begin);
+                byte[] buffer = new byte[len * 2];
+                reader.BaseStream.Read(buffer, 0, len * 2);
+                ushort[] arr = new ushort[len];
+                Buffer.BlockCopy(buffer, 0, arr, 0, len*2);
                 return (new IndexSequence(arr));
 
             }
@@ -319,8 +319,10 @@ namespace Docodo
                         else res *= this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
                         res.R = -(q + 1);
                     }
-                    IndexSequence newres = new IndexSequence();
-                    if (res.Count > 1)
+                    IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
+                    newres.AddRange(res);
+/*                   
+                    if (res.MinCount > 1)
                     {
                         ulong prevc = res[0];
                         newres.Add(prevc);
@@ -329,8 +331,8 @@ namespace Docodo
                             if (c - prevc > (ulong)Math.Abs(res.R)) newres.Add(c);
                             prevc = c;
                         }
-                    }
-                    return (newres);
+                    }*/
+                    return (newres.build());
                 }
 
             }
@@ -652,14 +654,14 @@ namespace Docodo
                             {
                                 if (InMemory)
                                 {
-                                    uint[] arr = new uint[n];
+                                    ushort[] arr = new ushort[n];
                                     byte[] bytes = bin.ReadBytes(n * sizeof(int));
-                                    Buffer.BlockCopy(bytes, 0, arr, 0, n * sizeof(uint));
+                                    Buffer.BlockCopy(bytes, 0, arr, 0, n * sizeof(ushort));
                                     self.Add(s, new IndexSequence(arr));
                                 }
                                 else
                                 {
-                                    self.Add(s, new IndexSequence(new ulong[] { (ulong)n, (ulong)bin.BaseStream.Position }));
+                                    self.Add(s, new IndexSequence.Builder().Add((ulong)n).Add((ulong)bin.BaseStream.Position).build());
                                     bin.BaseStream.Seek(n * sizeof(uint), SeekOrigin.Current);
                                 }
                             }
@@ -730,9 +732,13 @@ namespace Docodo
             
         }
 
+        event EventHandler CreationDone;
+
+
+      
         public async Task CreateAsync()
         {
-            if ((sources == null) || (sources.Length == 0) || (sources[0] == null)) { return; }// Task.FromException(new Exception("No data sources")); }
+            if ((sources == null) || (sources.Length == 0) || (sources[0] == null)) { if (CreationDone!=null) CreationDone(this,new EventArgs()); return; }// Task.FromException(new Exception("No data sources")); }
 
             if (status == Status.Idle)
             { //first time
@@ -839,8 +845,8 @@ namespace Docodo
                 }, cancelationToken.Token));
 
             }
-
-
+ 
+           if (CreationDone!=null) CreationDone(this,new EventArgs());
         }
 
         /* Merge all files in subfolders */
@@ -907,10 +913,14 @@ namespace Docodo
 
 
                 string[] s = new string[files.Length]; // next words
-                for (int q = 0; q < s.Length; q++) s[q] = " ";
+                IndexSequence[] arr = new IndexSequence[files.Length]; // coord arrays
+
+                for (int q = 0; q < s.Length; q++) {
+                    s[q] = " ";
+                    arr[q] = new IndexSequence();
+                }
                 
                 int[] n = new int[files.Length]; // numbers of coords in vectors
-                uint[][] arr = new uint[files.Length][]; // coord arrays
                 bool[] readnext = new bool[files.Length]; // what index read next
                 //Array.Fill(readnext, true); // need to read from each index first
                 for (int q = 0; q < readnext.Length; q++) readnext[q] = true;
@@ -925,11 +935,8 @@ namespace Docodo
                             try
                             {
                                 s[q] = bins[q].ReadString();
-                                n[q] = bins[q].ReadInt32();
-                                arr[q] = new uint[n[q]];
+                                arr[q].Read(bins[q]);
 
-                                byte[] bytes = bins[q].ReadBytes(sizeof(uint) * n[q]);
-                                Buffer.BlockCopy(bytes, 0, arr[q], 0, sizeof(uint) * n[q]);
                             }
                             catch (EndOfStreamException e)
                             {
@@ -975,11 +982,9 @@ namespace Docodo
                             if (readnext[q])
                             {
                                 // write coord array
-                                //TODO!!!! For large bases  (uint)(shifts[q]) doen't work 
-                                if (shift_coords) { for (int w = 0; w < arr[q].Length; w++) arr[q][w] += (uint)(shifts[q]); }
-                                byte[] arrbytes = new byte[n[q] * sizeof(int)];
-                                Buffer.BlockCopy(arr[q], 0, arrbytes, 0, n[q] * sizeof(int));
-                                wr.Write(arrbytes);
+                          
+                                if (shift_coords) { arr[q].Shift(shifts[q]); } //for (int w = 0; w < arr[q].Length; w++) arr[q][w] += (uint)(shifts[q]); }
+                                arr[q].Write(wr);
                             }
 
                     }
@@ -1205,7 +1210,7 @@ namespace Docodo
 
         /* Thread Safe temporary index class */
         /* Temporary indexes then merged into final index */
-        class TempIndex : SortedList<string, List<uint>>
+        class TempIndex : SortedList<string, IndexSequence.Builder>
         {
             public int nTmpIndex = 0;
 
@@ -1224,13 +1229,13 @@ namespace Docodo
 
             /* Add word into TemIndex
              * coord must be greater with each call */
-            public void Add(string word, uint coord)
+            public void Add(string word, ulong coord)
             {
                 maxCoord = coord; // coord increases with each call
-                List<uint> val;
+                IndexSequence.Builder val;
                 if (!base.TryGetValue(word, out val))
                 {
-                    val = new List<uint>();
+                    val = new IndexSequence.Builder();
                     base.Add(word, val);
                 }
                 val.Add(coord);
@@ -1252,15 +1257,11 @@ namespace Docodo
                     BinaryWriter bin = new BinaryWriter(file);
                     bin.Write(maxCoord);
 
-                    foreach (KeyValuePair<string, List<uint>> item in this)
+                    foreach (KeyValuePair<string, IndexSequence.Builder> item in this)
                     {
                         bin.Write(item.Key);
-                        bin.Write(item.Value.Count);
-                        // TODO: convert ot bytes
-                        item.Value.ForEach((i) =>
-                        {
-                            bin.Write(i);
-                        });
+                        IndexSequence seq = item.Value;
+                        seq.Write(bin);
                     }
 
                     bin.Close();
@@ -1480,7 +1481,8 @@ namespace Docodo
             vocs.Clear();
             stopWords.Clear();
             self.Clear();
-            reader.Dispose();
+            if (reader!=null)
+             reader.Dispose();
         }
     }
 }

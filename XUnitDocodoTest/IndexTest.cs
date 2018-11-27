@@ -16,19 +16,19 @@ namespace XUnitDocodoTest
     public class IndexTest
     {
          const string TestText1 = "Another game, with a similar result, was followed by a revoke from the unlucky Miller;" +
-            " on which the fat gentleman burst into a state of high personal excitement which lasted until the conclusion of the game, when he retired into a corner, and remained perfectly mute for one hour and twenty–seven minutes; " +
+            " on which the fat gentleman burst into a state of high personal excitement which lasted until the conclusion of the game, when he retired into a corner, and remained perfectly mute for one hour and twentyï¿½seven minutes; " +
             "at the end of which time he emerged from his retirement, and offered Mr. Pickwick a pinch of snuff with the air of a man who had made up his mind to a Christian forgiveness of injuries sustained. " +
-            "The old lady’s hearing decidedly improved and the unlucky Miller felt as much out of his element as a dolphin in a sentry–box. " +
-            "Meanwhile the round game proceeded right merrily.Isabella Wardle and Mr.Trundle ‘went partners,’ and Emily Wardle and Mr.Snodgrass did the same; " +
-            "and even Mr.Tupman and the spinster aunt established a joint–stock company of fish and flattery.Old Mr.Wardle was in the very height of his jollity; " +
+            "The old ladyï¿½s hearing decidedly improved and the unlucky Miller felt as much out of his element as a dolphin in a sentryï¿½box. " +
+            "Meanwhile the round game proceeded right merrily.Isabella Wardle and Mr.Trundle ï¿½went partners,ï¿½ and Emily Wardle and Mr.Snodgrass did the same; " +
+            "and even Mr.Tupman and the spinster aunt established a jointï¿½stock company of fish and flattery.Old Mr.Wardle was in the very height of his jollity; " +
             "and he was so funny in his management of the board, and the old ladies were so sharp after their winnings, that the whole table was in a perpetual roar of merriment and laughter.There was one old lady who always had about half a dozen cards to pay for, at which everybody laughed, regularly every round; " +
-            "and when the old lady looked cross at having to pay, they laughed louder than ever; on which the old lady’s face gradually brightened up, " +
-            "till at last she laughed louder than any of them, Then, when the spinster aunt got ‘matrimony,’ the young ladies laughed afresh, and the " +
+            "and when the old lady looked cross at having to pay, they laughed louder than ever; on which the old ladyï¿½s face gradually brightened up, " +
+            "till at last she laughed louder than any of them, Then, when the spinster aunt got ï¿½matrimony,ï¿½ the young ladies laughed afresh, and the " +
             "Spinster aunt seemed disposed to be pettish; till, feeling Mr.Tupman squeezing her hand under the table, she brightened up too, and looked rather knowing," +
             " as if matrimony in reality were not quite so far off as some people thought for; whereupon everybody laughed again, and especially old Mr.Wardle, " +
-            "who enjoyed a joke as much as the youngest.As to Mr. Snodgrass, he did nothing but whisper poetical sentiments into his partner’s ear, which made one " +
+            "who enjoyed a joke as much as the youngest.As to Mr. Snodgrass, he did nothing but whisper poetical sentiments into his partnerï¿½s ear, which made one " +
             "old gentleman facetiously sly, about partnerships at cards and partnerships for life, and caused the aforesaid old gentleman to make some remarks thereupon," +
-            " accompanied with divers winks and chuckles, which made the company very merry and the old gentleman’s wife especially so. " +
+            " accompanied with divers winks and chuckles, which made the company very merry and the old gentlemanï¿½s wife especially so. " +
             "And Mr. Winkle came out with jokes which are very well known in town, but are not all known in the country; and as everybody laughed at them very " +
             "heartily, and said they were very capital, Mr.Winkle was in a state of great honour and glory.And the benevolent clergyman looked pleasantly on; for " +
             "the happy faces which surrounded the table made the good old man feel happy too; " +
@@ -180,7 +180,7 @@ namespace XUnitDocodoTest
                     Assert.Equal(Index.Status.Idle, vocindex.status);
                     Assert.True(vocindex.CanSearch);
 
-                    Assert.Equal(Regex.Matches(TestText1.ToLower(), @"\band\b").Count * 2 * Npages, vocindex["#1"].Count);
+                    Assert.Equal(Regex.Matches(TestText1.ToLower(), @"\band\b").Count * 2 * Npages, vocindex["#1"].Count());
 
                     Assert.True(vocindex.Search("Tupman").Equals(index.Search("Tupman")));
                     Assert.True(vocindex.Search("and").Equals(index.Search("and")));
