@@ -168,6 +168,7 @@ namespace XUnitDocodoTest
                 voc.Add("the", 6);
                 voc.Add("them", 5);
                 voc.Add("then", 4);
+                voc.Range = ('a', 'z');
                 voc.Name = "en";
 
                 using (Index vocindex = new Index("VocabTest\\vocindex\\"))

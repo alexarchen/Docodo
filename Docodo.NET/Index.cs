@@ -193,7 +193,7 @@ namespace Docodo
                 e.MoveNext();
                 int len = (int) e.Current;
                 e.MoveNext();
-                long off = (long) e.Current;
+                long off = (long) e.Current - len;
                 reader.BaseStream.Seek(off, SeekOrigin.Begin);
                 byte[] buffer = new byte[len * 2];
                 reader.BaseStream.Read(buffer, 0, len * 2);
@@ -629,6 +629,33 @@ namespace Docodo
 
         }
 
+        // get most popular words
+        public Dictionary<string, int> Histogram()
+        {
+            Dictionary<string, int> dict = new Dictionary<string, int>();
+            try
+            {
+                foreach (var pair in (from item in self let v = (InMemory ? item.Value.Count : (int)item.Value.First()) orderby -v select new KeyValuePair<string, int>(item.Key, (int)v)).Take(1000))
+                {
+                    if (pair.Key[0] == KNOWN_WORD_CHAR)
+                    {
+                        int p = int.Parse(pair.Key.Substring(1), System.Globalization.NumberStyles.AllowHexSpecifier);
+                        int nV = (p >> 24);
+                        
+                        dict.Add("(" + KNOWN_WORD_CHAR + (from ii in vocs[nV] where (ii.Value == (p & 0xFFFFFF)) select ii).Take(10).Select((i)=>i.Key).Aggregate((a,b)=> { return (a + "," + b); })+")",
+                            pair.Value);
+                    }
+                    else
+                    dict.Add(pair.Key, pair.Value);
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error in Histogram: " + e.Message);
+            }
+            return (dict);
+        }
+
         public bool Load(string path)
         {
             if ((File.Exists(path + "\\" + ".index")) && (File.Exists(path + "\\" + ".index.list")))
@@ -647,25 +674,30 @@ namespace Docodo
                         do
                         {
                             string s = bin.ReadString();
-                            int n = bin.ReadInt32();
+                            
 
                            
-                            if (n > 0)
-                            {
+                            //if (n > 0)
+                            //{
                                 if (InMemory)
                                 {
-                                    ushort[] arr = new ushort[n];
+
+                                    /*ushort[] arr = new ushort[n];
                                     byte[] bytes = bin.ReadBytes(n * sizeof(int));
                                     Buffer.BlockCopy(bytes, 0, arr, 0, n * sizeof(ushort));
-                                    self.Add(s, new IndexSequence(arr));
+                                    */
+                                    IndexSequence seq = new IndexSequence();
+                                    seq.Read(bin);
+                                    self.Add(s, seq);
                                 }
                                 else
                                 {
-                                    self.Add(s, new IndexSequence.Builder().Add((ulong)n).Add((ulong)bin.BaseStream.Position).build());
-                                    bin.BaseStream.Seek(n * sizeof(uint), SeekOrigin.Current);
+                                    int n = bin.ReadInt32();
+                                    self.Add(s, new IndexSequence.Builder().Add((ulong)n).Add((ulong)(bin.BaseStream.Position+n)).build());
+                                    bin.BaseStream.Seek(n * IndexSequence.DataUnitSize, SeekOrigin.Current);
                                 }
-                            }
-                            else throw new InvalidDataException();
+                            //}
+                            //else throw new InvalidDataException();
 
                         }
                         while (true);
@@ -790,10 +822,9 @@ namespace Docodo
 
                     // Next parallel Merge 
                     status = Status.Merge;
-                    foreach (string dir in Directory.GetDirectories(WorkPath))
-                        MergeAll(dir);
+                    Directory.GetDirectories(WorkPath).AsParallel().ForAll((i) => MergeAll(i));
                     // Overall Merge
-                    Console.WriteLine("Final merge...");
+                        Console.WriteLine("Final merge...");
                     ArrayList files = new ArrayList();
                     foreach (string dir in Directory.GetDirectories(WorkPath))
                     {
@@ -920,7 +951,7 @@ namespace Docodo
                     arr[q] = new IndexSequence();
                 }
                 
-                int[] n = new int[files.Length]; // numbers of coords in vectors
+                //int[] n = new int[files.Length]; // numbers of coords in vectors
                 bool[] readnext = new bool[files.Length]; // what index read next
                 //Array.Fill(readnext, true); // need to read from each index first
                 for (int q = 0; q < readnext.Length; q++) readnext[q] = true;
@@ -967,26 +998,27 @@ namespace Docodo
                     if (list.Count > 0)
                     {
                         readnext[list[0].Value] = true;
-                        int nsize = n[list[0].Value];
+                        //int nsize = n[list[0].Value];
 
                         for (int q = 1; q < list.Count; q++)
                             if (list[q].Key.Equals(list[q - 1].Key))
                             {
                                 readnext[list[q].Value] = true;
-                                nsize += n[list[q].Value];
+                                //nsize += n[list[q].Value];
                             }
 
                         wr.Write(s[list[0].Value]);
-                        wr.Write(nsize);
+                        //wr.Write(nsize);
+                        IndexSequence.Builder bldr = new IndexSequence.Builder();
                         for (int q = 0; q < files.Length; q++)
                             if (readnext[q])
                             {
                                 // write coord array
                           
                                 if (shift_coords) { arr[q].Shift(shifts[q]); } //for (int w = 0; w < arr[q].Length; w++) arr[q][w] += (uint)(shifts[q]); }
-                                arr[q].Write(wr);
+                                bldr.AddRange(arr[q]);
                             }
-
+                        bldr.build().Write(wr);
                     }
 
                 } while (s_end.Count() > 0);
@@ -1438,6 +1470,11 @@ namespace Docodo
                     //else
                     {
                         string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
+                        //if (((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK)) == 0x2b8)
+                       // {
+                        //    break;
+                       // }
+
                         index.Add(str, (uint)( coord));
                         if ((bKeepForms) && (stemmed.Length < ss.Length))
                         { // reminder

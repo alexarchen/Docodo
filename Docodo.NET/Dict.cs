@@ -15,14 +15,10 @@ namespace Docodo
         public const int GROUP_NOT_EXCACT_WORD_MASK = 0x01000000; // mask for bit in group number to skip the word if it's excact the same as its stemm
         public const int GROUP_NUMBER_MASK = 0xFFFFFF;
 
-        public (char begin,char end) Range { get
-            {
-                if (Count>0)
-                 return (this.First().Key[0],this.Last().Key[0]);
+        // first letters range of this vocab
+        public (char begin, char end) Range { get => _Range; set { _Range = value; } }
 
-                return ('\0', '\0');
-            }
-        } // first letters range of this vocab
+        private (char begin, char end) _Range = ('\0','\0');
         
         //public void SetRange(char a,char b) { Range[0] = a; Range[1] = b; }
         public IStemmer stemmer;
@@ -33,7 +29,7 @@ namespace Docodo
         }
         public Vocab(string filename)
         {
-            
+           if (filename!=null) 
             {
                 string lang = new FileInfo(filename).Name.Split('.')[0];
                 Name = lang;
@@ -43,6 +39,7 @@ namespace Docodo
                     ConstructorInfo ctor = stemtype.GetConstructor(new Type[] { });
                     stemmer = (IStemmer)ctor.Invoke(new object[] { });
                 }
+                Load(filename);
             }
             
             
@@ -57,7 +54,7 @@ namespace Docodo
                 Clear();
                 do
                 {
-                    Add(r.ReadString(),r.ReadInt32());
+                    Add(r.ReadString(), r.ReadInt32());
                 }
                 while (true);
 
@@ -70,6 +67,8 @@ namespace Docodo
             {
                 r.Close();
             }
+            _Range.begin = this.Where((i) => {return (i.Key[0] >= 'a'); }).First().Key[0];
+            _Range.end = this.Last().Key[0];
         }
         /* return word group or 0 if absent */
         public int Search(string word)

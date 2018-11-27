@@ -7,13 +7,15 @@
     <StartupObject></StartupObject>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <Authors>Alex Archen</Authors>
-    <Description>DOCODO full-text powerful documental search engine.
+    <Description>DOCODO full-text powerful documental search engine
+- Support documents &amp; pages
+- Searches exact word coordinates
+- Searching with words distance limit up to exact phrase
 - High indexing speed
 - Supports different sources: files, http, DB
-- Supports different languages, can add othes
+- Supports different languages, you can add othes
 - Multithreaded
-- Scalable
-</Description>
+- Scalable</Description>
     <PackageId>DOCODO</PackageId>
     <PackageLicenseUrl>http://www.gnu.org/licenses/gpl.txt</PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/alexarchen/Docodo</PackageProjectUrl>
@@ -21,7 +23,7 @@
     <RepositoryType>GitHub</RepositoryType>
     <PackageTags>search engine document index full text</PackageTags>
     <PackageReleaseNotes>alpha version</PackageReleaseNotes>
-    <Version>0.0.5</Version>
+    <Version>0.0.8</Version>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Configurations>Debug;Release;Linux</Configurations>
     <Platforms>AnyCPU;x64</Platforms>

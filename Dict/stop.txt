@@ -3,6 +3,7 @@ and
 not
 but
 are
+the
 ;Russian
 или
 под

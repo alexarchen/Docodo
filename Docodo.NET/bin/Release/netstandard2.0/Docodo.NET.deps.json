@@ -7,7 +7,7 @@
   "targets": {
     ".NETStandard,Version=v2.0": {},
     ".NETStandard,Version=v2.0/": {
-      "Docodo.NET/0.0.7": {
+      "Docodo.NET/0.0.8": {
         "dependencies": {
           "DynamicExpresso.Core": "2.1.0",
           "HtmlAgilityPack": "1.8.9",
@@ -737,7 +737,7 @@
     }
   },
   "libraries": {
-    "Docodo.NET/0.0.7": {
+    "Docodo.NET/0.0.8": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

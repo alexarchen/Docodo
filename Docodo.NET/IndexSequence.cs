@@ -10,12 +10,13 @@ namespace Docodo
     public class IndexSequence : IEnumerable<ulong>
     {
         
-        const short BITS = 15;
+        const short BITS = sizeof(ushort)*8-1;
         const ushort OVERFLOW = 1<<BITS;
         const ushort MASK = OVERFLOW-1;
+        public static readonly int DataUnitSize = sizeof(ushort);
         public IndexSequence() : base()
         {
-
+            
         }
 
         public IndexSequence(IndexSequence seq) 
@@ -61,17 +62,26 @@ namespace Docodo
                 return this;
             }
             public Builder Add(ulong l){
-                if (l<Last) throw new InvalidDataException("Must add ascending values");
-                if ((l-Last<=(ulong)min) && (seq.Count>0)) return this; // check for min distance
+                //if (l<Last) throw new InvalidDataException("Must add ascending values");
                 
                 ulong diff =l-Last;
-                do{
-                    seq.self.Add((ushort)((diff>MASK?OVERFLOW:0)|((ushort)((diff&MASK)))));
-                    diff>>=BITS;
+                if ((min>0) && (l - Last <= (ulong)min) && (seq.Count > 0)) return this; // check for min distance
+                do
+                {
+                    if (diff > MASK)
+                    {
+                        seq.self.Add((ushort)(OVERFLOW | (diff & MASK)));
+                        diff >>= BITS;
+                    }
+                    else
+                    {
+                        seq.self.Add((ushort)diff);
+                        break; // speed up
+                    }
                 }
                 while (diff>0);
                 Last = l;
-            return (this);
+              return (this);
             }
 
             public Builder AddRange(IEnumerable<ulong> range){
@@ -128,11 +138,7 @@ namespace Docodo
 
             public object Current {get => Current;}
             ulong IEnumerator<ulong>.Current {
-                get{
-
-                return Last;
-
-            }
+                get => Last;
             }
 
             public  void Reset(){
@@ -160,17 +166,24 @@ namespace Docodo
         public void Write(BinaryWriter bin)
         {
           bin.Write(self.Count);
-          
-          foreach (ushort s in self)
-           bin.Write(s);
+          byte[] bytes = new byte[sizeof(ushort) * self.Count];
+          Buffer.BlockCopy(self.ToArray(), 0, bytes, 0, sizeof(ushort) * self.Count);
+          bin.Write(bytes);
         }
 
         public void Read(BinaryReader read){
             int n = read.ReadInt32();
-            ushort [] arr = new ushort[n];
-            byte[] bytes = read.ReadBytes(sizeof(ushort) * n);
-            Buffer.BlockCopy(bytes, 0, arr, 0, sizeof(ushort) * n);
-            self = new List<ushort>(arr);
+            try
+            {
+                ushort[] arr = new ushort[n];
+                byte[] bytes = read.ReadBytes(sizeof(ushort) * n);
+                Buffer.BlockCopy(bytes, 0, arr, 0, sizeof(ushort) * n);
+                self = new List<ushort>(arr);
+            }
+            catch(Exception e)
+            {
+
+            }
         }
 
         // shift all values 

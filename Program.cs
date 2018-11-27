@@ -216,6 +216,12 @@ namespace Docodo
                     try
                     {
                         ind.CreateAsync().Wait();
+                        var hist = ind.Histogram();
+                        Console.WriteLine("Histogram:");
+                        foreach (var item in hist.Take(20))
+                        {
+                            Console.WriteLine($"{item.Key}: {item.Value}");
+                        }
 
                     }
                     catch (OperationCanceledException e)
