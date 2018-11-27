@@ -36,7 +36,7 @@ namespace Docodo
 
     public class Index : IDisposable
     {
-        const int MAX_DEF_TMP_INDEXITEMS = 1000000; // Maximum items in tempindex
+        const int MAX_DEF_TMP_INDEXITEMS = 1000001; // Maximum items in tempindex
         const int MAX_WORD_LENGTH = 32;      // Maximum word length
         const long MAX_FILE_SIZE = 200000000; // Maximum indexable text file size
         const int COORD_DEVIDER = 1; // devider of coordinates in index
