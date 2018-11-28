@@ -1487,7 +1487,7 @@ namespace Docodo
 
                         }
                     }
-                    //break;
+                    break;
 
                 }
                 nVoc++;
