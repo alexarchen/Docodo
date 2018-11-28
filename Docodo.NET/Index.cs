@@ -1587,26 +1587,11 @@ namespace Docodo
 
                                 continue;
                             }
-                            //foreach (string ss in System.Text.RegularExpressions.Regex.Split(c, "\\b"))
-                            string ss = "";
-                            ss += c[0];
-                            for (int qq = 1; qq < c.Length; qq++)
+
+                            foreach (Match m in Regex.Matches(c,@"\p{L}+|\p{N}+"))
                             {
-                                if ((qq == c.Length - 1) || (IsLetter(c[qq]) != IsLetter(c[qq - 1])))
-                                {
-                                    // end of group
-
-                                    if (ss.Length > 0)
-                                    {
-                                        if ((ss.Length >= MIN_WORD_LENGTH) && (IsLetter(ss[0])))
-                                        {
-                                            index.AddWord(ss, coord + (uint)(qq-ss.Length));
-                                        }
-
-                                    }
-                                    ss = "";
-                                }
-                                ss += c[qq];
+                                if ((m.Value.Length>=MIN_WORD_LENGTH) && (m.Value.Length<=MAX_WORD_LENGTH))
+                                 index.AddWord(m.Value,coord + (uint)m.Index);
                             }
                             coord += (uint)c.Length;
                             index.EndPage(page.id, coord);
