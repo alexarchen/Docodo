@@ -285,7 +285,7 @@ namespace Docodo
             return (orVals);
             */
         }
-
+       
         private IndexSequence SearchWord(string word,bool bExact=false)
         {
             if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
@@ -306,7 +306,7 @@ namespace Docodo
                         stemmed = voc.Stem(word);
                         if (firstemmed.Length == 0) firstemmed = stemmed;
                         nG = voc.Search(stemmed);
-                        if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(word))) nG = 0;
+//                        if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(word))) nG = 0;
                         if (nG != 0) break;
                     }
                     nVoc++;
@@ -314,7 +314,15 @@ namespace Docodo
                 if (nG != 0)
                 {
                     string str = FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK));
-                    return (this[str]);
+                    res = this[str];
+                    if ((bExact) && (bKeepForms) && (res != null))
+                    {
+                        res.R = -(stemmed.Length + 1);
+                        res *= this[Builder.GetSuffix(word, stemmed)];
+                        IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
+                        newres.AddRange(res);
+                        res = newres.build();
+                    }
 
                 }
                 else
@@ -322,10 +330,10 @@ namespace Docodo
                     if (firstemmed.Length > 0) firstemmed = word;
 
                     res = this[firstemmed];
-                    if ((bExact) && (bKeepForms) && (firstemmed.Length<=word.Length) && (res!=null))
+                    if ((bExact) && (bKeepForms) && (res!=null))
                     {
-                        res.R = -(stemmed.Length+1);
-                        res *= this[WORD_SUFFIX_CHAR + word.Substring(firstemmed.Length)];
+                        res.R = -(firstemmed.Length+1);
+                        res *= this[Builder.GetSuffix(word, firstemmed)];
                         IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
                         newres.AddRange(res);
                         res = newres.build();
@@ -1317,14 +1325,14 @@ namespace Docodo
             public ulong maxCoord { get; private set; } = 0; // maximum coordinate
 
 
-            private void AddSuffix(string word,string stem,ulong coord)
+            public static string GetSuffix(string word,string stem)
             {
                 string str = "";
                 if (word.Length - stem.Length <= 2)
                     str = WORD_SUFFIX_CHAR + word[0] + SUFFIX_DEVIDER_CHAR + word.Substring(stem.Length);
                 else
                     str = WORD_SUFFIX_CHAR + word.Substring(stem.Length);
-                Add(str, coord );
+                return str;
 
             }
 
@@ -1352,7 +1360,7 @@ namespace Docodo
                             Add(str, coord);
                             if ((Parent.bKeepForms) && (stemmed.Length <= ss.Length))
                             { // reminder
-                                AddSuffix(ss, stemmed, coord + 1);
+                                Add(GetSuffix(ss, stemmed), coord + 1);
                             }
 
                         
@@ -1371,7 +1379,7 @@ namespace Docodo
                     Add(stemmed.Length > 0 ? stemmed : ss, coord);
                     if ((Parent.bKeepForms) && (stemmed.Length>0) && (stemmed.Length<=ss.Length))
                     {
-                        AddSuffix(ss, stemmed, coord + 1);
+                        Add(GetSuffix(ss, stemmed), coord + 1);
                     }
                     /*                    for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
                                         {
