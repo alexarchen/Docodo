@@ -99,7 +99,7 @@ namespace XUnitDocodoTest
 
                     Assert.Equal(pos.Count, res.foundPages[0].pos.Count);
                     foreach (var p in res.foundPages)
-                        Assert.True(Enumerable.SequenceEqual(pos, p.pos));
+                        Assert.True(pos.SequenceEqual(p.pos));
 
                 }
 
@@ -189,6 +189,54 @@ namespace XUnitDocodoTest
                 }
             }
             Directory.Delete("VocabTest\\", true);
+        }
+
+        [Fact]
+        public void BuilderTest()
+        {
+            Vocab voc = new Vocab();
+            voc.Add("and", 1);
+            voc.Add("end", 3);
+            voc.Add("old", 2);
+            voc.Add("the", 6);
+            voc.Add("them", 5);
+            voc.Add("then", 4);
+            voc.Range = ('a', 'z');
+            voc.Name = "en";
+            Index.Builder bldr = new Index.Builder("BuilderTest").AddVoc(voc);
+            bldr.AddDoc("A","");
+            
+            string[] words = { "and", "tupman", "everybody", "old" };
+            List<int>[] pos = new List<int>[words.Length];
+            for (int q = 0; q < pos.Length; q++)
+                pos[q] = new List<int>();
+
+            foreach (Match match in Regex.Matches(TestText1.ToLower(),@"\b\w+\b"))
+            {
+                for (int q = 0; q < pos.Length; q++)
+                {
+                    if (match.Value.Equals(words[q]))
+                        pos[q].Add(match.Index);
+                }
+                bldr.AddWord(match.Value,(ulong)match.Index);
+            }
+            bldr.EndPage("1");
+
+            using (Index index = bldr.Build())
+            {
+                for (int q = 0; q < pos.Length; q++)
+                {
+                    Index.SearchResult res = index.Search(words[q]);
+                    Assert.NotNull(res);
+                    Assert.Equal(1, res.foundPages.Count);
+                    Assert.True(pos[q].SequenceEqual(res.foundPages[0].pos));
+
+                }
+
+            }
+
+            Directory.Delete("BuilderTest", true);
+
         }
 
 
