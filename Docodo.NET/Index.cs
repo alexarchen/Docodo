@@ -286,7 +286,7 @@ namespace Docodo
             */
         }
 
-        private IndexSequence SearchWord(string word)
+        private IndexSequence SearchWord(string word,bool bExact=false)
         {
             if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
             string stemmed = word;
@@ -297,12 +297,14 @@ namespace Docodo
             {
                 int nG = 0;
                 int nVoc = 0;
+                string firstemmed="";
                 foreach (Vocab voc in vocs)
                 {
                     // TODO: detect prefered language
                     if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end))
                     {
                         stemmed = voc.Stem(word);
+                        if (firstemmed.Length == 0) firstemmed = stemmed;
                         nG = voc.Search(stemmed);
                         if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(word))) nG = 0;
                         if (nG != 0) break;
@@ -317,28 +319,29 @@ namespace Docodo
                 }
                 else
                 {
-                    word = WORD_BEGIN_CHAR + word + WORD_END_CHAR;
+                    if (firstemmed.Length > 0) firstemmed = word;
 
-                    for (int q = 0; q < word.Length; q += SUBWORD_LENGTH)
+                    res = this[firstemmed];
+                    if ((bExact) && (bKeepForms) && (firstemmed.Length<=word.Length) && (res!=null))
                     {
-                        if (res == null) res = this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
-                        else res *= this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
-                        res.R = -(q + 1);
+                        res.R = -(stemmed.Length+1);
+                        res *= this[WORD_SUFFIX_CHAR + word.Substring(firstemmed.Length)];
+                        IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
+                        newres.AddRange(res);
+                        res = newres.build();
                     }
-                    IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
-                    newres.AddRange(res);
-/*                   
-                    if (res.MinCount > 1)
-                    {
-                        ulong prevc = res[0];
-                        newres.Add(prevc);
-                        foreach (ulong c in res)
-                        {
-                            if (c - prevc > (ulong)Math.Abs(res.R)) newres.Add(c);
-                            prevc = c;
-                        }
-                    }*/
-                    return (newres.build());
+
+                    /*                   
+                                        if (res.MinCount > 1)
+                                        {
+                                            ulong prevc = res[0];
+                                            newres.Add(prevc);
+                                            foreach (ulong c in res)
+                                            {
+                                                if (c - prevc > (ulong)Math.Abs(res.R)) newres.Add(c);
+                                                prevc = c;
+                                            }
+                                        }*/
                 }
 
             }
@@ -1314,26 +1317,32 @@ namespace Docodo
             public ulong maxCoord { get; private set; } = 0; // maximum coordinate
 
 
+            private void AddSuffix(string word,string stem,ulong coord)
+            {
+                string str = "";
+                if (word.Length - stem.Length <= 2)
+                    str = WORD_SUFFIX_CHAR + word[0] + SUFFIX_DEVIDER_CHAR + word.Substring(stem.Length);
+                else
+                    str = WORD_SUFFIX_CHAR + word.Substring(stem.Length);
+                Add(str, coord );
+
+            }
+
             // write word into index builder
             // ss - word, coord - current coordinate
             public void AddWord(string ss, ulong coord)
             {
-                uint d = 0;
+                //uint d = 0;
                 string stemmed = ss;
                 int nG = 0;
                 int nVoc = 0;
                 if (Parent.stopWords.Contains(ss)) return;
+                string firststemmed="";
 
                 foreach (Vocab voc in Parent.vocs)
                 {
                     if ((voc != null) && (ss[0] >= voc.Range.begin) && (ss[0] <= voc.Range.end) && ((stemmed = voc.Stem(ss)) != null) && ((nG = voc.Search(stemmed)) != 0))
                     {
-                        // writing group number rather then parts of the word
-
-                        //if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(ss)))
-                        //    nG = 0;
-                        //else
-                        {
                             string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
                             //if (((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK)) == 0x2b8)
                             // {
@@ -1341,31 +1350,34 @@ namespace Docodo
                             // }
 
                             Add(str, coord);
-                            if ((Parent.bKeepForms) && (stemmed.Length < ss.Length))
+                            if ((Parent.bKeepForms) && (stemmed.Length <= ss.Length))
                             { // reminder
-                                str = "";
-                                if (ss.Length - stemmed.Length <= 2)
-                                    str = WORD_SUFFIX_CHAR + ss[0] + SUFFIX_DEVIDER_CHAR + ss.Substring(stemmed.Length);
-                                else
-                                    str = WORD_SUFFIX_CHAR + ss.Substring(stemmed.Length);
-                                Add(str, (coord + 1));
-
+                                AddSuffix(ss, stemmed, coord + 1);
                             }
-                        }
-                        //break;
 
+                        
                     }
+                    if (firststemmed.Length == 0)
+                        firststemmed = stemmed;
                     nVoc++;
+                    if (nG != 0) break;
                 }
 
                 if (nG == 0)
                 {
-                    string news = WORD_BEGIN_CHAR + ss + WORD_END_CHAR;
-                    for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
+
+                    stemmed = firststemmed;
+                     // WORD_BEGIN_CHAR + ss + WORD_END_CHAR;
+                    Add(stemmed.Length > 0 ? stemmed : ss, coord);
+                    if ((Parent.bKeepForms) && (stemmed.Length>0) && (stemmed.Length<=ss.Length))
                     {
-                        Add(news.Substring(q, Math.Min(news.Length - q, SUBWORD_LENGTH)), (uint)(coord + d));
-                        d++;
+                        AddSuffix(ss, stemmed, coord + 1);
                     }
+                    /*                    for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
+                                        {
+                                            Add(news.Substring(q, Math.Min(news.Length - q, SUBWORD_LENGTH)), (uint)(coord + d));
+                                            d++;
+                                        }*/
                 }
 
             }
