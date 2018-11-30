@@ -2,6 +2,7 @@ using System;
 using Xunit;
 using Docodo;
 using System.Text.RegularExpressions;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -35,6 +36,52 @@ namespace XUnitDocodoTest
             "and though the merriment was rather boisterous, still it came from the heart and not from the lips; and this is the right sort of merriment, after all.";
          const string TestHeaders1 = "Size=190\nSource=Test\nTitle=Charles Diskense Pickwick Club\n";
 
+        // only single threading
+        class SamePageDataSource : IIndexDataSource, IIndexDocument
+        {
+            int NPages = 1;
+            public SamePageDataSource(int nPages)
+            {
+                NPages = nPages;
+                for (int q = 0; q < NPages - 1;q++)
+                    pages.Add(pages[0]);
+            }
+            public float Estimate() { return 0; }
+            public string Name { get; set; } = "Test";
+            public string Path { get; set; } = "Test";
+
+            virtual public void Reset() { }
+
+            List<IndexPage> pages = new List<IndexPage>(new IndexPage[] { new IndexPage("1", TestText1) });
+
+            bool HasNext = true;
+            public IIndexDocument Next(bool w)
+            {
+                if (HasNext)
+                {
+                    HasNext = false;
+                    return this;
+                }
+
+                return null;
+            }
+
+            public IEnumerator<IndexPage> GetEnumerator()
+            {
+                return pages.GetEnumerator();
+            }
+
+            IEnumerator IEnumerable.GetEnumerator()
+            {
+                return GetEnumerator();
+            }
+
+            public void Dispose()
+            {
+
+            }
+        }
+
         class TestDataSource : IIndexDataSource
         {
             public TestDataSource(int nPages)
@@ -42,6 +89,8 @@ namespace XUnitDocodoTest
                 Npages = nPages;
             }
             public int Npages { get; }
+
+            public float Estimate() { return 0; }
 
             public string Name { get; set; } = "Test";
             public string Path { get; set; } = "Test";
@@ -79,7 +128,9 @@ namespace XUnitDocodoTest
             {
 
                 index.WorkPath = "CoordTest\\";
-                index.AddDataSource(new TestDataSource(1000));
+                int N = 1000;
+                index.AddDataSource(new TestDataSource(N));
+                index.Stemmers.Clear();
                 await index.CreateAsync();
                 Assert.False(index.IsCreating);
                 Assert.True(index.CanSearch);
@@ -96,10 +147,10 @@ namespace XUnitDocodoTest
                         pos.Add(m.Index);
                     }
                     Index.SearchResult res = index.Search(word);
-
+                    Assert.Equal(2*N, res.foundPages.Count);
                     Assert.Equal(pos.Count, res.foundPages[0].pos.Count);
                     foreach (var p in res.foundPages)
-                        Assert.True(Enumerable.SequenceEqual(pos, p.pos));
+                        Assert.True(pos.SequenceEqual(p.pos));
 
                 }
 
@@ -116,6 +167,8 @@ namespace XUnitDocodoTest
 
 
                 index.WorkPath = "RequestSyntaxTest\\";
+                index.Stemmers.Clear();
+
                 int Npages = 100;
                 index.AddDataSource(new TestDataSource(Npages));
                 await index.CreateAsync();
@@ -157,6 +210,7 @@ namespace XUnitDocodoTest
                 int Npages = 100;
                 TestDataSource ds = new TestDataSource(Npages);
                 index.AddDataSource(ds);
+                index.MaxDegreeOfParallelism = 1;
                 await index.CreateAsync();
                 Assert.False(index.IsCreating);
                 Assert.True(index.CanSearch);
@@ -191,7 +245,81 @@ namespace XUnitDocodoTest
             Directory.Delete("VocabTest\\", true);
         }
 
+        [Fact]
+        public void BuilderTest()
+        {
+            Vocab voc = new Vocab();
+            voc.Add("and", 1);
+            voc.Add("end", 3);
+            voc.Add("old", 2);
+            voc.Add("the", 6);
+            voc.Add("them", 5);
+            voc.Add("then", 4);
+            voc.Range = ('a', 'z');
+            voc.Name = "en";
+            Index.Builder bldr = new Index.Builder("BuilderTest").AddVoc(voc);
+            bldr.AddDoc("A","");
+            
+            string[] words = { "and", "tupman", "everybody", "old" };
+            List<int>[] pos = new List<int>[words.Length];
+            for (int q = 0; q < pos.Length; q++)
+                pos[q] = new List<int>();
 
+            foreach (Match match in Regex.Matches(TestText1.ToLower(),@"\b\w+\b"))
+            {
+                for (int q = 0; q < pos.Length; q++)
+                {
+                    if (match.Value.Equals(words[q]))
+                        pos[q].Add(match.Index);
+                }
+                bldr.AddWord(match.Value,(ulong)match.Index);
+                
+            }
+            bldr.EndPage("1");
+
+            using (Index index = bldr.Build())
+            {
+                for (int q = 0; q < pos.Length; q++)
+                {
+                    Index.SearchResult res = index.Search(words[q]);
+                    Assert.NotNull(res);
+                    Assert.Equal(1, res.foundPages.Count);
+                    Assert.True(pos[q].SequenceEqual(res.foundPages[0].pos));
+
+                }
+
+            }
+
+            Directory.Delete("BuilderTest", true);
+
+        }
+
+        [Fact]
+        public void MemUseTest()
+        {
+            Index index = new Index("MemTest");
+            int N = 5000;
+            index.AddDataSource(new SamePageDataSource(N));
+            index.CreateAsync();
+            Thread.Sleep(3000);
+            long startMem = GC.GetTotalMemory(false);
+
+            Task<long>.Run(() =>
+            {
+                long maxmem = 0;
+                while (index.IsCreating)
+                {
+                    long l
+                    = GC.GetTotalMemory(false);
+                    if (l > maxmem) maxmem = l;
+                    Thread.Sleep(100);
+                }
+                return maxmem;
+            }).ContinueWith((i) => { Assert.True(i.Result-startMem < 10000000); }).Wait();
+
+            Directory.Delete("MemTest", true);
+
+        }
     }
 
 }

@@ -80,6 +80,7 @@ namespace Docodo
         string Name { get; }
         string Path { get; }
         void Reset(); // sets to initial counter, must be called before first call to Next()!!!
+        float Estimate(); // estimate part done by enumerator
         IIndexDocument Next(bool wait=true); // iterate next element
     }
 
@@ -134,12 +135,19 @@ namespace Docodo
             Name = name;
             Path = path;
          }
-
+        protected long datasize=0;
+        protected long datadone=0;
+        // call when navigating to add to data size estemation
+        protected virtual void AddDataSize(long sz)
+        {
+            Interlocked.Add(ref datasize, sz);
+        }
         protected CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
         protected ConcurrentQueue<T> filesToDo = new ConcurrentQueue<T>();
 
         // called when start navigation, must override
         protected abstract void Navigate(ConcurrentQueue<T> queue, CancellationToken token);
+        public virtual float Estimate() { return datasize>0?datadone/datasize:0; }
 
         private AutoResetEvent _event = new AutoResetEvent(true);
         public string Name { get; set; } // unique name of datasource
@@ -207,6 +215,8 @@ namespace Docodo
                 cancellationTokenSource.Cancel();
                 filesToDo = new ConcurrentQueue<T>();
             }
+            datasize = 0;
+            datadone = 0;
             NavigateAsync();
 
         }
@@ -223,6 +233,7 @@ namespace Docodo
         public int MaxItems = MAX_ITEMS; // set MaxItems before Reset()
         public string mod;
         public int encodePage {get; set;}
+        
         /* Name - unique name, path - folder with txt files, mod - modificator, EncodePage - code page number */
         public IndexTextFilesDataSource(string Name, string path,string mod="*.txt",int EncodePage=1252): base(Name, path)
         {
@@ -319,8 +330,6 @@ namespace Docodo
                     if (sr == null) {
                         sr = GetStreamReader(fname);
                     }
-
-
 
                     if (sr != null)
                     {
@@ -481,8 +490,8 @@ namespace Docodo
         public string Path { get => source.Path; }
         public string filename;
         public IIndexDataSource source { get; protected set; }
-       // IEnumerator<IIndexDocument> enumerator;
-
+        // IEnumerator<IIndexDocument> enumerator;
+        public virtual float Estimate() => source.Estimate();
         ZipArchive archive;
         private Stream stream=null;
         /* filename - cache file name */
@@ -521,6 +530,8 @@ namespace Docodo
 
         public class TextCacheFile : IIndexDirectDocument, IEnumerator<IndexPage>
         {
+            int np = 0; // numer of pages processed
+
             public TextCacheFile(string fname, IndexTextCacheDataSource parent)
             {
                 // create when using direct access by parent[]
@@ -566,6 +577,7 @@ namespace Docodo
                 // next page
                 if (doc.MoveNext())
                 {
+
                     IndexPage _current = doc.Current;
                     lock (parent.ziplock)
                     {
@@ -575,14 +587,24 @@ namespace Docodo
                             wr.Write(_current.text);
                             wr.Close();
                         }
+                        np++;
+
+                        if ((np % 100) == 0)
+                            parent.stream.FlushAsync();
+
                     }
                     return (true);
                 }
-                else return false;
+                else
+                {
+                    parent.stream.FlushAsync();
+
+                    return false;
+                }
 
             }
 
-            public void Reset() { }
+            public void Reset() { np = 0; }
 
             public IEnumerator<IndexPage> GetEnumerator()
             {
@@ -604,6 +626,11 @@ namespace Docodo
         {
             get
             {
+                if ((archive != null) && (archive.Mode==ZipArchiveMode.Create))
+                {
+                    Dispose();
+                }
+
                 if ((File.Exists(filename)) && (archive==null))
                 {
                     try
@@ -674,7 +701,7 @@ namespace Docodo
             if (stream != null) stream.Close();
             File.Delete(filename);
             stream = File.Open(filename, FileMode.OpenOrCreate);
-            archive = new ZipArchive(stream, ZipArchiveMode.Update);
+            archive = new ZipArchive(stream, ZipArchiveMode.Create);
         }
 
     }

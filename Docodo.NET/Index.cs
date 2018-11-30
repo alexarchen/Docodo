@@ -34,7 +34,7 @@ namespace Docodo
 {
 
 
-    public class Index : IDisposable
+    public class Index : IEnumerable<KeyValuePair<string,IndexSequence>>, IDisposable
     {
         const int MAX_DEF_TMP_INDEXITEMS = 1000001; // Maximum items in tempindex
         const int MAX_WORD_LENGTH = 32;      // Maximum word length
@@ -46,6 +46,7 @@ namespace Docodo
         const int MAX_FOUND_PAGES_IN_DOC = 1000; // maximum output found pages in one document
         const char WORD_SUFFIX_CHAR = '$'; // char prefix of word stemming remainder
         const char SUFFIX_DEVIDER_CHAR = ':';
+        const char DOC_SEP = ':'; // document name from source name separator in pageslist
         const char WORD_BEGIN_CHAR = '<';
         const char WORD_END_CHAR = '>';
         const char KNOWN_WORD_CHAR = '#'; // char prefix to word nG from vocab
@@ -71,7 +72,7 @@ namespace Docodo
             else WorkPath = DEFAULT_PATH;
 
             if (path !=null)
-                Load(path);
+                Load();
             
             this.InMemory = InMemory;
 
@@ -85,15 +86,34 @@ namespace Docodo
         public bool bKeepForms { get; set; } = true;/* Keep full forms of the words */
         public bool CanSearch { get; private set; } = false; /* If index is loaded */
 
+        // ConcurrentStemmer class for multithread stemmer using
+        public class ConcurrentStemmer : IStemmer
+        {
+            IStemmer _base;
+            public ConcurrentStemmer (Type type)
+            {
+                this._base = (IStemmer) type.GetConstructor(new Type[]{ }).Invoke(new object[] { });
+            }
+            object stemlock = new object();
+            public string Stem(string word)
+            {
+                lock (stemlock)
+                {
+                    return _base.Stem(word);
+                }
+            }
+        }
         ///  Stemmers table for string name
+        public static (string lang, IStemmer stemmer, string range)[] KnownStemmers = {
+                ("digit",null,"0-9"),
+                ("ru",new ConcurrentStemmer(typeof(RussianStemmer)),"а-яё"),
+                ("en",new ConcurrentStemmer(typeof(EnglishStemmer)),"a-z"),
+                ("de",new ConcurrentStemmer(typeof(GermanStemmer)),"a-zẞäüö"),
+                ("fr",new ConcurrentStemmer(typeof(FrenchStemmer)),"a-zéâàêèëçîïôûùüÿ")
+            };
+
+        public List<(string lang, IStemmer stemmer, string range)> Stemmers = new List<(string lang, IStemmer stemmer, string range)>(KnownStemmers);
         /*
-        public static (string lang, Type type, string letters)[] Stemmers = {
-                ("ru",typeof (RussianStemmer),"А-Яа-яЁё"),
-                ("en",typeof (EnglishStemmer),"A-Za-z"),
-                ("us",typeof (EnglishStemmer),"A-Za-z"),
-                ("de",typeof (GermanStemmer),"A-Za-zẞßäüöÄÖÜ"),
-                ("fr",typeof (FrenchStemmer),"A-Za-zÉéÂâÀàÊêÈèËëÇçÎîÏïÔôÛûÙùÜüŸÿ")
-            };*/
         public static (string lang, Type type)[] Stemmers = {
                 ("ru",typeof (RussianStemmer)),
                 ("en",typeof (EnglishStemmer)),
@@ -101,7 +121,7 @@ namespace Docodo
                 ("fr",typeof (FrenchStemmer)),
                 ("sp",typeof (SpanishStemmer)),
                 ("it",typeof (ItalianStemmer))
-            };
+            };*/
 
 
         public class SearchResult
@@ -239,6 +259,7 @@ namespace Docodo
             Close();
 
         }
+
         public int Count { get => self.Count; }
 
         public IndexSequence this[string key]
@@ -250,7 +271,11 @@ namespace Docodo
             return (seq);
             }
         }
-        private IndexSequence SearchField(string field, string value)
+        public IEnumerator<KeyValuePair<string, IndexSequence>> GetEnumerator() { return self.GetEnumerator(); }
+
+        IEnumerator IEnumerable.GetEnumerator()=>GetEnumerator();
+
+        protected IndexSequence SearchField(string field, string value)
         {
             try
             {
@@ -279,66 +304,35 @@ namespace Docodo
             return (orVals);
             */
         }
-
-        private IndexSequence SearchWord(string word)
+       
+        protected IndexSequence SearchWord(string word,bool bExact=false)
         {
             if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
             string stemmed = word;
             
 
-            IndexSequence res=null;
+            IndexSequence res = new IndexSequence(/* Empty */);
             try
             {
-                int nG = 0;
-                int nVoc = 0;
-                foreach (Vocab voc in vocs)
-                {
-                    // TODO: detect prefered language
-                    if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end))
+                var codes = GetWordCodes(word);
+                if ((codes != null) && (codes.Length>0)) {
+                    // take first only
+                    res = this[codes[0].code];
+                    if ((bKeepForms) && (bExact) && (codes[0].suff!=null))
                     {
-                        stemmed = voc.Stem(word);
-                        nG = voc.Search(stemmed);
-                        if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(word))) nG = 0;
-                        if (nG != 0) break;
+                        res.R = -1;
+                        res *= this[codes[0].suff];
+                        // reduce close coords
+                        IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
+                        newres.AddRange(res);
+                        res = newres.build();
                     }
-                    nVoc++;
-                }
-                if (nG != 0)
-                {
-                    string str = FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK));
-                    return (this[str]);
-
-                }
-                else
-                {
-                    word = WORD_BEGIN_CHAR + word + WORD_END_CHAR;
-
-                    for (int q = 0; q < word.Length; q += SUBWORD_LENGTH)
-                    {
-                        if (res == null) res = this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
-                        else res *= this[word.Substring(q, Math.Min(word.Length - q, SUBWORD_LENGTH))];
-                        res.R = -(q + 1);
-                    }
-                    IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
-                    newres.AddRange(res);
-/*                   
-                    if (res.MinCount > 1)
-                    {
-                        ulong prevc = res[0];
-                        newres.Add(prevc);
-                        foreach (ulong c in res)
-                        {
-                            if (c - prevc > (ulong)Math.Abs(res.R)) newres.Add(c);
-                            prevc = c;
-                        }
-                    }*/
-                    return (newres.build());
                 }
 
             }
             catch (Exception e)
             {
-                res = new IndexSequence(/* Empty */);
+                
             }
             return (res);
         }
@@ -356,6 +350,7 @@ namespace Docodo
                   fields.Append($"_GEF(\"{match.Groups[1]}={match.Groups[2]}\") * ");
                   //" GetField(\"${1}\",\"${2}\") * ");
               }*/
+
             req = Regex.Replace(req, @"[^\w(){}=|]|_+", " "); // delete incorrect symbols
 
             req = Regex.Replace(req, @"{*(\w+)[ ]*=([\w|() ]+)}", (Match match) => {
@@ -544,7 +539,7 @@ namespace Docodo
                     if (res == null) res = resf;
                     if (res != null)
                     {
-
+                        
 
                         SearchResult result = PrepareSearchResult(res,filter.ToArray());
                         if (resf!=null)
@@ -629,20 +624,33 @@ namespace Docodo
 
         }
 
+        // returns words list by string code
+        public string GetWordsGroup(string  code)
+        {
+            if (code[0] == KNOWN_WORD_CHAR) code = code.Substring(1);
+
+            return (GetWordsGroup(int.Parse(code, System.Globalization.NumberStyles.AllowHexSpecifier)));
+        }
+        // returns words list by voc group number
+        public string GetWordsGroup(int nG)
+        {
+            int nV = (nG >> 24);
+            return (from ii in vocs[nV] where (ii.Value == (nG & 0xFFFFFF)) select ii).Take(20).Select((i) => i.Key).Aggregate((a, b) => { return (a + "," + b); });
+        }
+
         // get most popular words
-        public Dictionary<string, int> Histogram()
+        public static Dictionary<string, int> CalcHistogram(Index index)
         {
             Dictionary<string, int> dict = new Dictionary<string, int>();
             try
             {
-                foreach (var pair in (from item in self let v = (InMemory ? item.Value.Count : (int)item.Value.First()) orderby -v select new KeyValuePair<string, int>(item.Key, (int)v)).Take(1000))
+                foreach (var pair in (from item in index let v = (index.InMemory ? item.Value.Count : (int)item.Value.First()) orderby -v select new KeyValuePair<string, int>(item.Key, (int)v)).Take(1000))
                 {
                     if (pair.Key[0] == KNOWN_WORD_CHAR)
                     {
-                        int p = int.Parse(pair.Key.Substring(1), System.Globalization.NumberStyles.AllowHexSpecifier);
-                        int nV = (p >> 24);
                         
-                        dict.Add("(" + KNOWN_WORD_CHAR + (from ii in vocs[nV] where (ii.Value == (p & 0xFFFFFF)) select ii).Take(10).Select((i)=>i.Key).Aggregate((a,b)=> { return (a + "," + b); })+")",
+                        
+                        dict.Add("(" + KNOWN_WORD_CHAR + index.GetWordsGroup(pair.Key.Substring(1)) +")",
                             pair.Value);
                     }
                     else
@@ -656,21 +664,24 @@ namespace Docodo
             return (dict);
         }
 
-        public bool Load(string path)
+        // maximum word coordinate in index, equals total length of text
+        public ulong MaxCoord { get; private set; } = 0;
+
+        public bool Load()
         {
-            if ((File.Exists(path + "\\" + ".index")) && (File.Exists(path + "\\" + ".index.list")))
+            if ((File.Exists(WorkPath + "\\" + ".index")) && (File.Exists(WorkPath + "\\" + ".index.list")))
             {
                 CanSearch = false;
                 self.Clear();
 
                 try
                 {
-                    BinaryReader bin = new BinaryReader(File.OpenRead(path + "\\" + ".index"));
+                    BinaryReader bin = new BinaryReader(File.OpenRead(WorkPath + "\\" + ".index"));
 
 
                     try
                     {
-                        bin.ReadUInt64();
+                        MaxCoord = bin.ReadUInt64();
                         do
                         {
                             string s = bin.ReadString();
@@ -710,7 +721,7 @@ namespace Docodo
                     if (!InMemory) { reader = new StreamReader(bin.BaseStream); }
                     else bin.Close();
 
-                    bin = new BinaryReader(File.OpenRead(path + "\\" + ".index.list"));
+                    bin = new BinaryReader(File.OpenRead(WorkPath + "\\" + ".index.list"));
 
                     PagesList = new IndexPageList();
                     PagesList.Load(bin);
@@ -856,7 +867,7 @@ namespace Docodo
                             sources = ds.ToArray();
                         }
 
-                        Load(WorkPath);
+                        Load();
                         CanSearch = true;
 
                         Array.ForEach(Directory.GetDirectories(WorkPath), i => Directory.Delete(i, true));
@@ -1063,26 +1074,10 @@ namespace Docodo
                     BinaryFormatter binf = new BinaryFormatter();
                     FileStream f = File.OpenRead(new FileInfo(files[q]).DirectoryName + "\\index.tmplist");
 
-                    List<KeyValuePair<string, ulong>> dict = (List<KeyValuePair<string, ulong>>)binf.Deserialize(f);
+                    PagesList.AddFromList((List<KeyValuePair<string, ulong>>)binf.Deserialize(f),shifts[q]);
+
                     f.Close();
 
-
-                    Document doc = new Document();
-
-                    foreach (KeyValuePair<string, ulong> d in dict)
-                    {
-                        if (d.Key[0] != ':') // doc
-                        {
-                            doc = new Document(d.Key);
-                            PagesList.AddDocument(doc);
-                        }
-                        else
-                        {
-                            PagesList.Add(d.Value+shifts[q], new DocPage(doc, d.Key.Substring(1)));
-                        }
-
-
-                    }
                 }
 
                 lock (DoSearchLock) // stop all seach tasks before replacing index
@@ -1162,6 +1157,27 @@ namespace Docodo
 
             ulong prevc = 0xFFFFFFFF;
 
+            public void AddFromList(List<KeyValuePair<string,ulong>> list,ulong shift)
+            {
+                Document doc = new Document();
+
+                foreach (KeyValuePair<string, ulong> d in list)
+                {
+                    if (d.Key[0] != DOC_SEP) // doc
+                    {
+                        doc = new Document(d.Key);
+                        AddDocument(doc);
+                    }
+                    else
+                    {
+                        Add(d.Value + shift, new DocPage(doc, d.Key.Substring(1)));
+                    }
+
+
+                }
+
+            }
+
             public DocPage GetPage(ulong coord)
             {
 
@@ -1199,11 +1215,11 @@ namespace Docodo
                         doc = p.Value.doc;
                         bin.Write(doc.Name);
                         bin.Write(p.Key);
-                        bin.Write(":" + p.Value.id);
+                        bin.Write(DOC_SEP + p.Value.id);
                     }
                     else
                     {
-                        bin.Write(":" + p.Value.id);
+                        bin.Write(DOC_SEP + p.Value.id);
                     }
                 }
             }
@@ -1218,7 +1234,7 @@ namespace Docodo
                     {
                         ulong n = read.ReadUInt64();
                         string s = read.ReadString();
-                        if (s[0] != ':')
+                        if (s[0] != DOC_SEP)
                         {
                             doc = new Document(s);
                             DocsList.Add(doc);
@@ -1238,49 +1254,224 @@ namespace Docodo
                 _enum.MoveNext();
             }
         }
+
+
         IndexPageList PagesList;
 
-        /* Thread Safe temporary index class */
-        /* Temporary indexes then merged into final index */
-        class TempIndex : SortedList<string, IndexSequence.Builder>
+        protected static string GetSuffixCode(string word, string suf)
+        {
+            string str = "";
+            if (suf.Length <= 2)
+                str = ""+WORD_SUFFIX_CHAR + word[0] + SUFFIX_DEVIDER_CHAR + suf;
+            else
+                str = "" + WORD_SUFFIX_CHAR + suf;
+            return str;
+
+        }
+
+        // prepare words before adding to index
+        // only low letters case
+        virtual protected string PrepareWord(string word)
+        {
+            // TODO: replace multilanguage words, absurd words like bbbbbbb or brrrr
+            return word;
+        }
+        // Get word codes based on vocs, stemmers
+        // returns also suffixes
+        virtual protected (string code,string suff)[] GetWordCodes(string word)
+        {
+            word = PrepareWord(word);
+            if (word.Length == 0) return null;
+
+            if ((word[0] <= '9') && (word[0] >= '0'))
+                return new (string, string)[] { (word, null) };
+            string stemmed = word;
+            int nG = 0;
+            int nVoc = 0;
+            if (stopWords.Contains(word)) return null;
+            string firststemmed = "";
+            List<(string code, string suff)> l = new List<(string code, string suff)>();
+            try
+            {
+
+                foreach (Vocab voc in vocs)
+                {
+
+                    if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end) && ((stemmed = voc.Stem(word)) != null) && ((nG = voc.Search(stemmed)) != 0))
+                    {
+                        string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
+                        l.Add((str, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                    }
+                    if (firststemmed.Length == 0)
+                        firststemmed = stemmed;
+                    nVoc++;
+                    //if (nG != 0) break;
+                }
+
+                if (nG == 0)
+                {
+                    // not know word
+
+                    stemmed = firststemmed;
+                    if (vocs.Count == 0)
+                    {
+                        // no vacabs loaded, use stemmers
+                        foreach (var st in Stemmers)
+                        {
+                            if (!Regex.IsMatch(word, "[^" + st.range + "]"))
+                            {
+                                if (st.stemmer != null)
+                                {
+                                    try
+                                    {
+                                        stemmed = st.stemmer.Stem(word);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        throw;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (stemmed.Length == 0) //not found neither in vocs nor in stemmers
+                        l.Add((word, null));
+                    else
+                        l.Add((word, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                }
+
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
+
+            return l.ToArray();
+        }
+
+        /* Thread Safe index builder class */
+        /* Used by Index.CreateAsync method
+        /* Standalone use (for small amount of data, without datasources and texts): 
+         * Index.Builder bldr = new Index.Builder(...).AddVoc().StopWords();
+         * bldr.AddWord()
+         * bldr.AddWord()
+         * ....
+         * Index index = bldr.Build();
+         */
+        public class Builder : SortedList<string,IndexSequence.Builder>
         {
             public int nTmpIndex = 0;
+            private static int nBuilder = 0; // holds unique builder id
 
+            Index Parent;
 
-            public TempIndex(string tmppath, int _MaxItems) : base()
+            // create Builder using Index's settings from parent
+            public Builder(Index parent) : base()
             {
-                this.MaxItems = _MaxItems;
-                this.Path = tmppath;
-                TotalCount = 0;
-                maxCoord = 0;
+                Parent = parent;
+                MaxItems = parent.MaxTmpIndexItems;
+                Path = parent.WorkPath+"\\"+(nBuilder++);
+                Directory.CreateDirectory(Path);
             }
+            // create Builder with new Index (path, InMem, vocs) and loading stop words from stopwordsfile
+            public Builder(string path,bool InMem = false, Vocab [] vocs =  null , string stopwordsfile = null) : base()
+            {
+                Parent = new Index(path, InMem, vocs);
+                if (stopwordsfile!=null)
+                 Parent.LoadStopWords(stopwordsfile);
+                MaxItems = Parent.MaxTmpIndexItems;
+                Path = Parent.WorkPath + "\\" + (nBuilder++);
+                Directory.CreateDirectory(Path);
+            }
+
+
+            public Builder StopWords(string file) { Parent.LoadStopWords(file);  return this; }
+            public Builder AddVoc(Vocab voc) { Parent.AddVoc(voc); return this; }
+            
+
+
             public int MaxItems { get; }
             public string Path { get; }
-            public int TotalCount { get; private set; }
-            public ulong maxCoord { get; private set; } // maximum coordinate
+            public int TotalCount { get; private set; } = 0;
 
-            /* Add word into TemIndex
-             * coord must be greater with each call */
-            public void Add(string word, ulong coord)
+            public ulong maxCoord { get; private set; } = 0; // maximum coordinate
+
+
+            /// <summary>
+            /// Write word into index builder 
+            /// </summary>
+            /// <param name="word">textual word</param>
+            /// <param name="coord">coordinate of word in text space</param>
+            public void AddWord(string word, ulong coord)
+            {
+                //uint d = 0;
+                var codes = Parent.GetWordCodes(word);
+                if (codes != null)
+                    foreach (var code in codes)
+                  {
+                    Add(code.code, coord);
+                    if ((Parent.bKeepForms) && (code.suff!=null))
+                    {
+                        Add(code.suff, coord + 1);
+                    }
+                 }
+
+            }
+
+            /// <summary>
+            /// Add word code into Index Builder. Coord must be greater with each call.
+            /// Usually you should use AddWord to add word
+            /// </summary>
+            /// <param name="code">unique word code</param>
+            /// <param name="coord">coordinate in text space</param>
+            public void Add(string code, ulong coord)
             {
                 maxCoord = coord; // coord increases with each call
                 IndexSequence.Builder val;
-                if (!base.TryGetValue(word, out val))
+                if (!base.TryGetValue(code, out val))
                 {
                     val = new IndexSequence.Builder();
-                    base.Add(word, val);
+                    base.Add(code, val);
                 }
                 val.Add(coord);
                 TotalCount++;
                 if (TotalCount > MaxItems)
                 {
-                    Save();
+                    Save(false);
                     Clear();
                     TotalCount = 0;
                 }
             }
 
-            public void Save()
+            List<KeyValuePair<string, ulong>> pages = new List<KeyValuePair<string, ulong>>();
+
+            // Add document, must be called before AddWord
+            // sourceid - unique source name, must not be empty
+            // AddDoc() .... EndPage("1")... EndPage("X") AddDoc()...  EndPage("X") Save() or Build()
+            public void AddDoc(string sourceid,string name)
+            {
+                if (sourceid.Length == 0) throw new Exception("sourceid must not be empty");
+                AddDoc(sourceid,name, maxCoord);
+            }
+            public void AddDoc(string sourceid,string name,ulong maxcoord)
+            {
+                pages.Add(new KeyValuePair<string, ulong>(sourceid+DOC_SEP+name, maxcoord));
+            }
+            // Finish page and start next one
+            // AddDoc() .... EndPage("1")... EndPage("X") AddDoc()... EndPage("X") Save() or Build()
+            public void EndPage(string id)
+            {
+                EndPage(id, maxCoord);
+            }
+
+            public void EndPage(string id,ulong maxcoord)
+            {
+                pages.Add(new KeyValuePair<string, ulong>(DOC_SEP+id, maxcoord));
+            }
+
+
+            public void Save(bool bSavePages=true)
             {
                 try
                 {
@@ -1298,6 +1489,16 @@ namespace Docodo
 
                     bin.Close();
                     //file.Close();
+
+
+                    if (bSavePages)
+                    {
+                        FileStream fileStream = File.Create($"{Path}\\index.tmplist");
+                        BinaryFormatter binf = new BinaryFormatter();
+                        binf.Serialize(fileStream, pages);
+                        fileStream.Close();
+
+                    }
                 }
                 catch (Exception e)
                 {
@@ -1306,12 +1507,60 @@ namespace Docodo
 
             }
 
+            /* Builds parent and returns it */
+            public Index Build()
+            {
+                if (nTmpIndex != 0) throw new Exception("Can't build, index is too large");
+
+                if (pages.Count == 0) { AddDoc("","", 0); EndPage("1"); }
+
+                lock (Parent.DoSearchLock)
+                {
+                    Save();
+
+                    Parent.Dispose();
+
+                    // Copy files 
+                    if (File.Exists(Parent.WorkPath + "\\.index")) File.Delete(Parent.WorkPath + "\\.index");
+                    if (File.Exists(Parent.WorkPath + "\\.index.list")) File.Delete(Parent.WorkPath + "\\.index.list");
+                    File.Move(Path + "\\1.tmpind", Parent.WorkPath + "\\.index");
+
+                    Parent.PagesList = new IndexPageList();
+                    Parent.PagesList.AddFromList(pages, 0);
+
+                    BinaryWriter binOut = new BinaryWriter(File.Create(Parent.WorkPath + "\\.index.list"));
+                    Parent.PagesList.Save(binOut);
+                    binOut.Close();
+
+                    /*
+                    Parent.self = new SortedList<string, IndexSequence>();
+                    foreach (var p in this)
+                        Parent.self.Add(p.Key, p.Value);
+
+                    BinaryFormatter binf = new BinaryFormatter();
+                    using (MemoryStream stream = new MemoryStream())
+                    {
+                       binf.Serialize(stream, pages);
+                       stream.Seek(0, SeekOrigin.Begin);
+                       Parent.PagesList.Load(new BinaryReader(stream));
+                    }
+
+                    Parent.CanSearch = true;
+                    */
+                    Parent.Load();
+                }
+
+                return Parent;
+            }
+
 
         };
 
         public string WorkPath;
 
 
+
+        public Builder GetBuilder() { return new Builder(this); }
       
         private void IndexTask(IIndexDataSource source)
         {
@@ -1320,11 +1569,9 @@ namespace Docodo
             try
             {
                 // main index task
-                Directory.CreateDirectory(WorkPath + "\\" + Task.CurrentId);
-                TempIndex index = new TempIndex(WorkPath + "\\" + Task.CurrentId, MaxTmpIndexItems);
-                List<KeyValuePair<string, ulong>> files = new List<KeyValuePair<string, ulong>>();
-
-                Console.WriteLine("Started IndexTask id{0}", Task.CurrentId);
+                Builder index = GetBuilder();
+                
+                Console.WriteLine("Started IndexTask id{0} in {1}", Task.CurrentId, index.Path);
 
                 // task to process files
 
@@ -1341,7 +1588,7 @@ namespace Docodo
 
                     Console.WriteLine("ID:{0} <-{1}", Task.CurrentId, doc.Name);
                     // TODO: File must fit RAM
-                    files.Add(new KeyValuePair<string, ulong>(source.Name + ":" + doc.Name, index.maxCoord));
+                    index.AddDoc(source.Name,doc.Name);
                     
                     foreach (IndexPage page in doc)
                     {
@@ -1376,7 +1623,7 @@ namespace Docodo
                                                     {
                                                         //coord += (ulong)(fields[0].Length);
                                                         index.Add(FIELD_NAME_CHAR + fields[0], (uint)(coord + (ulong)(dc-1)));
-                                                        AddToTempIndex(match.ToLower(), coord + (ulong)dc, index);
+                                                        index.AddWord(match.ToLower(), coord + (ulong)dc);
                                                     }
                                                     dc += match.Length;
                                                 }
@@ -1387,33 +1634,18 @@ namespace Docodo
                                     catch (EndOfStreamException e)
                                     { }
                                 }
-                                files.Add(new KeyValuePair<string, ulong>(":" + page.id, coord));
+                                index.EndPage(page.id, coord);
 
                                 continue;
                             }
-                            //foreach (string ss in System.Text.RegularExpressions.Regex.Split(c, "\\b"))
-                            string ss = "";
-                            ss += c[0];
-                            for (int qq = 1; qq < c.Length; qq++)
+
+                            foreach (Match m in Regex.Matches(c,@"\p{L}+|\p{N}+"))
                             {
-                                if ((qq == c.Length - 1) || (IsLetter(c[qq]) != IsLetter(c[qq - 1])))
-                                {
-                                    // end of group
-
-                                    if (ss.Length > 0)
-                                    {
-                                        if ((ss.Length >= MIN_WORD_LENGTH) && (IsLetter(ss[0])))
-                                        {
-                                            AddToTempIndex(ss, coord + (uint)(qq-ss.Length),  index);
-                                        }
-
-                                    }
-                                    ss = "";
-                                }
-                                ss += c[qq];
+                                if ((m.Value.Length>=MIN_WORD_LENGTH) && (m.Value.Length<=MAX_WORD_LENGTH))
+                                 index.AddWord(m.Value,coord + (uint)m.Index);
                             }
                             coord += (uint)c.Length;
-                            files.Add(new KeyValuePair<string, ulong>(":" + page.id, coord));
+                            index.EndPage(page.id, coord);
                    //         nextCoord.Add(coord,cancel.Token);
                      //       Console.WriteLine($"Task {Task.CurrentId} pushed next coord {coord}");
                             
@@ -1432,12 +1664,6 @@ namespace Docodo
                 index.Save();
 
 
-                FileStream fileStream = File.Create($"{WorkPath + "\\" + Task.CurrentId}\\index.tmplist");
-                BinaryFormatter bin = new BinaryFormatter();
-                bin.Serialize(fileStream, files);
-                fileStream.Close();
-
-
             }
             catch (Exception e)
             {
@@ -1449,74 +1675,22 @@ namespace Docodo
         }
 
       
-        // write word into temporary index 
-        // ss - word, coord - current base coordinate, index - index to add 
-        private void AddToTempIndex(string ss,ulong coord,  TempIndex index)
-        {
-            uint d = 0;
-            string stemmed = ss;
-            int nG = 0;
-            int nVoc = 0;
-            if (stopWords.Contains(ss)) return;
-
-            foreach (Vocab voc in vocs)
-            {
-                if ((voc != null) && (ss[0] >= voc.Range.begin) && (ss[0] <= voc.Range.end) && ((stemmed = voc.Stem(ss)) != null) && ((nG = voc.Search(stemmed)) != 0))
-                {
-                    // writing group number rather then parts of the word
-
-                    //if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(ss)))
-                    //    nG = 0;
-                    //else
-                    {
-                        string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
-                        //if (((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK)) == 0x2b8)
-                       // {
-                        //    break;
-                       // }
-
-                        index.Add(str, (uint)( coord));
-                        if ((bKeepForms) && (stemmed.Length < ss.Length))
-                        { // reminder
-                            str = "";
-                            if (ss.Length - stemmed.Length <= 2)
-                                str = WORD_SUFFIX_CHAR + ss[0] + SUFFIX_DEVIDER_CHAR + ss.Substring(stemmed.Length);
-                            else
-                                str = WORD_SUFFIX_CHAR + ss.Substring(stemmed.Length);
-                            index.Add(str, (uint)(coord + 1));
-
-                        }
-                    }
-                    break;
-
-                }
-                nVoc++;
-            }
-
-            if (nG == 0)
-            {
-                string news = WORD_BEGIN_CHAR + ss + WORD_END_CHAR;
-                for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
-                {
-                    index.Add(news.Substring(q, Math.Min(news.Length - q, SUBWORD_LENGTH)), (uint)(coord + d));
-                    d++;
-                }
-            }
-
-        }
 
         /* Call to free all resources used by index */
         public void Dispose()
         {
             CanSearch = false;
-            foreach (IIndexDataSource source in sources)
-              if (source.GetType()==typeof(IndexTextCacheDataSource))
+            if (sources != null)
             {
-                    source.Dispose();
+                foreach (IIndexDataSource source in sources)
+                    if (source.GetType() == typeof(IndexTextCacheDataSource))
+                    {
+                        source.Dispose();
+                    }
             }
             sources = new IIndexDataSource[] { };
-            vocs.Clear();
-            stopWords.Clear();
+            if (PagesList!=null)
+             PagesList.Clear();
             self.Clear();
             if (reader!=null)
              reader.Dispose();

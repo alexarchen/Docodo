@@ -21,7 +21,8 @@ namespace Docodo
         private (char begin, char end) _Range = ('\0','\0');
         
         //public void SetRange(char a,char b) { Range[0] = a; Range[1] = b; }
-        public IStemmer stemmer;
+
+        public IStemmer stemmer; // only thread safe stemmer
         public string Name;
         public Vocab(IStemmer s = null)
         {
@@ -33,19 +34,20 @@ namespace Docodo
             {
                 string lang = new FileInfo(filename).Name.Split('.')[0];
                 Name = lang;
-                Type stemtype = (from el in Index.Stemmers where el.lang.Equals(lang) select el.type).First();
+                stemmer = (from el in Index.KnownStemmers where el.lang.Equals(lang) select el.stemmer).First();
+                /*Type stemtype = (from el in Index.Stemmers where el.lang.Equals(lang) select el.type).First();
                 if (stemtype != null)
                 {
                     ConstructorInfo ctor = stemtype.GetConstructor(new Type[] { });
                     stemmer = (IStemmer)ctor.Invoke(new object[] { });
-                }
+                }*/
                 Load(filename);
             }
             
             
         }
-        object stemmlocker = new object(); // ensure thread safe stemmer call
-        public string Stem(string s) { lock (stemmlocker) { if (stemmer != null) return (stemmer.Stem(s)); } return s; }
+        //object stemmlocker = new object(); // ensure thread safe stemmer call
+        public string Stem(string s) { /*lock (stemmlocker) {*/ if (stemmer != null) return (stemmer.Stem(s)); /*}*/ return s; }
         public void Load(string fname)
         {
             BinaryReader r = new BinaryReader(File.OpenRead(fname));
