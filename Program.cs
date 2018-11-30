@@ -26,7 +26,6 @@ using Docodo;
 
 namespace Docodo
 {
-   
     class Program
     {
 
@@ -37,6 +36,7 @@ namespace Docodo
         
         static void Main(string[] args)
         {
+            
    
             Console.Write("DOCODO Search Engine\nCopyrigt (c) 2018 Alexey Zakharchenko \n");
             int nPort = 9001;
@@ -91,7 +91,7 @@ namespace Docodo
                 else
                  if (spl[0].Equals("web"))
                 {
-                    WebDataSource websource = new WebDataSource("web", spl[1],spl.Length>=2?spl[2]:"");
+                    WebDataSource websource = new WebDataSource("web", spl[1],spl.Length>2?spl[2]:"");
 //                    websource.MaxItems = 100;
                     ind.AddDataSource(websource);
                 }
@@ -216,7 +216,7 @@ namespace Docodo
                     try
                     {
                         ind.CreateAsync().Wait();
-                        var hist = ind.Histogram();
+                        var hist = Index.CalcHistogram(ind);
                         Console.WriteLine("Histogram:");
                         foreach (var item in hist.Take(20))
                         {

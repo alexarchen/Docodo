@@ -86,15 +86,34 @@ namespace Docodo
         public bool bKeepForms { get; set; } = true;/* Keep full forms of the words */
         public bool CanSearch { get; private set; } = false; /* If index is loaded */
 
+        // ConcurrentStemmer class for multithread stemmer using
+        public class ConcurrentStemmer : IStemmer
+        {
+            IStemmer _base;
+            public ConcurrentStemmer (Type type)
+            {
+                this._base = (IStemmer) type.GetConstructor(new Type[]{ }).Invoke(new object[] { });
+            }
+            object stemlock = new object();
+            public string Stem(string word)
+            {
+                lock (stemlock)
+                {
+                    return _base.Stem(word);
+                }
+            }
+        }
         ///  Stemmers table for string name
+        public static (string lang, IStemmer stemmer, string range)[] KnownStemmers = {
+                ("digit",null,"0-9"),
+                ("ru",new ConcurrentStemmer(typeof(RussianStemmer)),"а-яё"),
+                ("en",new ConcurrentStemmer(typeof(EnglishStemmer)),"a-z"),
+                ("de",new ConcurrentStemmer(typeof(GermanStemmer)),"a-zẞäüö"),
+                ("fr",new ConcurrentStemmer(typeof(FrenchStemmer)),"a-zéâàêèëçîïôûùüÿ")
+            };
+
+        public List<(string lang, IStemmer stemmer, string range)> Stemmers = new List<(string lang, IStemmer stemmer, string range)>(KnownStemmers);
         /*
-        public static (string lang, Type type, string letters)[] Stemmers = {
-                ("ru",typeof (RussianStemmer),"А-Яа-яЁё"),
-                ("en",typeof (EnglishStemmer),"A-Za-z"),
-                ("us",typeof (EnglishStemmer),"A-Za-z"),
-                ("de",typeof (GermanStemmer),"A-Za-zẞßäüöÄÖÜ"),
-                ("fr",typeof (FrenchStemmer),"A-Za-zÉéÂâÀàÊêÈèËëÇçÎîÏïÔôÛûÙùÜüŸÿ")
-            };*/
         public static (string lang, Type type)[] Stemmers = {
                 ("ru",typeof (RussianStemmer)),
                 ("en",typeof (EnglishStemmer)),
@@ -102,7 +121,7 @@ namespace Docodo
                 ("fr",typeof (FrenchStemmer)),
                 ("sp",typeof (SpanishStemmer)),
                 ("it",typeof (ItalianStemmer))
-            };
+            };*/
 
 
         public class SearchResult
@@ -256,7 +275,7 @@ namespace Docodo
 
         IEnumerator IEnumerable.GetEnumerator()=>GetEnumerator();
 
-        private IndexSequence SearchField(string field, string value)
+        protected IndexSequence SearchField(string field, string value)
         {
             try
             {
@@ -286,76 +305,34 @@ namespace Docodo
             */
         }
        
-        private IndexSequence SearchWord(string word,bool bExact=false)
+        protected IndexSequence SearchWord(string word,bool bExact=false)
         {
             if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
             string stemmed = word;
             
 
-            IndexSequence res=null;
+            IndexSequence res = new IndexSequence(/* Empty */);
             try
             {
-                int nG = 0;
-                int nVoc = 0;
-                string firstemmed="";
-                foreach (Vocab voc in vocs)
-                {
-                    // TODO: detect prefered language
-                    if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end))
+                var codes = GetWordCodes(word);
+                if ((codes != null) && (codes.Length>0)) {
+                    // take first only
+                    res = this[codes[0].code];
+                    if ((bKeepForms) && (bExact) && (codes[0].suff!=null))
                     {
-                        stemmed = voc.Stem(word);
-                        if (firstemmed.Length == 0) firstemmed = stemmed;
-                        nG = voc.Search(stemmed);
-//                        if (((nG & Vocab.GROUP_NOT_EXCACT_WORD_MASK) != 0) && (stemmed.Equals(word))) nG = 0;
-                        if (nG != 0) break;
-                    }
-                    nVoc++;
-                }
-                if (nG != 0)
-                {
-                    string str = FromInt((nVoc<<24) | (nG & Vocab.GROUP_NUMBER_MASK));
-                    res = this[str];
-                    if ((bExact) && (bKeepForms) && (res != null))
-                    {
-                        res.R = -(stemmed.Length + 1);
-                        res *= this[Builder.GetSuffix(word, stemmed)];
+                        res.R = -1;
+                        res *= this[codes[0].suff];
+                        // reduce close coords
                         IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
                         newres.AddRange(res);
                         res = newres.build();
                     }
-
-                }
-                else
-                {
-                    if (firstemmed.Length > 0) firstemmed = word;
-
-                    res = this[firstemmed];
-                    if ((bExact) && (bKeepForms) && (res!=null))
-                    {
-                        res.R = -(firstemmed.Length+1);
-                        res *= this[Builder.GetSuffix(word, firstemmed)];
-                        IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
-                        newres.AddRange(res);
-                        res = newres.build();
-                    }
-
-                    /*                   
-                                        if (res.MinCount > 1)
-                                        {
-                                            ulong prevc = res[0];
-                                            newres.Add(prevc);
-                                            foreach (ulong c in res)
-                                            {
-                                                if (c - prevc > (ulong)Math.Abs(res.R)) newres.Add(c);
-                                                prevc = c;
-                                            }
-                                        }*/
                 }
 
             }
             catch (Exception e)
             {
-                res = new IndexSequence(/* Empty */);
+                
             }
             return (res);
         }
@@ -373,6 +350,7 @@ namespace Docodo
                   fields.Append($"_GEF(\"{match.Groups[1]}={match.Groups[2]}\") * ");
                   //" GetField(\"${1}\",\"${2}\") * ");
               }*/
+
             req = Regex.Replace(req, @"[^\w(){}=|]|_+", " "); // delete incorrect symbols
 
             req = Regex.Replace(req, @"{*(\w+)[ ]*=([\w|() ]+)}", (Match match) => {
@@ -561,7 +539,7 @@ namespace Docodo
                     if (res == null) res = resf;
                     if (res != null)
                     {
-
+                        
 
                         SearchResult result = PrepareSearchResult(res,filter.ToArray());
                         if (resf!=null)
@@ -1276,7 +1254,101 @@ namespace Docodo
                 _enum.MoveNext();
             }
         }
+
+
         IndexPageList PagesList;
+
+        protected static string GetSuffixCode(string word, string suf)
+        {
+            string str = "";
+            if (suf.Length <= 2)
+                str = ""+WORD_SUFFIX_CHAR + word[0] + SUFFIX_DEVIDER_CHAR + suf;
+            else
+                str = "" + WORD_SUFFIX_CHAR + suf;
+            return str;
+
+        }
+
+        // prepare words before adding to index
+        // only low letters case
+        virtual protected string PrepareWord(string word)
+        {
+            // TODO: replace multilanguage words, absurd words like bbbbbbb or brrrr
+            return word;
+        }
+        // Get word codes based on vocs, stemmers
+        // returns also suffixes
+        virtual protected (string code,string suff)[] GetWordCodes(string word)
+        {
+            word = PrepareWord(word);
+            if (word.Length == 0) return null;
+
+            if ((word[0] <= '9') && (word[0] >= '0'))
+                return new (string, string)[] { (word, null) };
+            string stemmed = word;
+            int nG = 0;
+            int nVoc = 0;
+            if (stopWords.Contains(word)) return null;
+            string firststemmed = "";
+            List<(string code, string suff)> l = new List<(string code, string suff)>();
+            try
+            {
+
+                foreach (Vocab voc in vocs)
+                {
+
+                    if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end) && ((stemmed = voc.Stem(word)) != null) && ((nG = voc.Search(stemmed)) != 0))
+                    {
+                        string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
+                        l.Add((str, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                    }
+                    if (firststemmed.Length == 0)
+                        firststemmed = stemmed;
+                    nVoc++;
+                    //if (nG != 0) break;
+                }
+
+                if (nG == 0)
+                {
+                    // not know word
+
+                    stemmed = firststemmed;
+                    if (vocs.Count == 0)
+                    {
+                        // no vacabs loaded, use stemmers
+                        foreach (var st in Stemmers)
+                        {
+                            if (!Regex.IsMatch(word, "[^" + st.range + "]"))
+                            {
+                                if (st.stemmer != null)
+                                {
+                                    try
+                                    {
+                                        stemmed = st.stemmer.Stem(word);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        throw;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (stemmed.Length == 0) //not found neither in vocs nor in stemmers
+                        l.Add((word, null));
+                    else
+                        l.Add((word, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                }
+
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
+
+            return l.ToArray();
+        }
 
         /* Thread Safe index builder class */
         /* Used by Index.CreateAsync method
@@ -1322,78 +1394,37 @@ namespace Docodo
             public int MaxItems { get; }
             public string Path { get; }
             public int TotalCount { get; private set; } = 0;
+
             public ulong maxCoord { get; private set; } = 0; // maximum coordinate
 
 
-            public static string GetSuffix(string word,string stem)
-            {
-                string str = "";
-                if (word.Length - stem.Length <= 2)
-                    str = WORD_SUFFIX_CHAR + word[0] + SUFFIX_DEVIDER_CHAR + word.Substring(stem.Length);
-                else
-                    str = WORD_SUFFIX_CHAR + word.Substring(stem.Length);
-                return str;
-
-            }
-
-            // write word into index builder
-            // ss - word, coord - current coordinate
-            public void AddWord(string ss, ulong coord)
+            /// <summary>
+            /// Write word into index builder 
+            /// </summary>
+            /// <param name="word">textual word</param>
+            /// <param name="coord">coordinate of word in text space</param>
+            public void AddWord(string word, ulong coord)
             {
                 //uint d = 0;
-                string stemmed = ss;
-                int nG = 0;
-                int nVoc = 0;
-                if (Parent.stopWords.Contains(ss)) return;
-                string firststemmed="";
-
-                foreach (Vocab voc in Parent.vocs)
-                {
-                    if ((voc != null) && (ss[0] >= voc.Range.begin) && (ss[0] <= voc.Range.end) && ((stemmed = voc.Stem(ss)) != null) && ((nG = voc.Search(stemmed)) != 0))
+                var codes = Parent.GetWordCodes(word);
+                if (codes != null)
+                    foreach (var code in codes)
+                  {
+                    Add(code.code, coord);
+                    if ((Parent.bKeepForms) && (code.suff!=null))
                     {
-                            string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
-                            //if (((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK)) == 0x2b8)
-                            // {
-                            //    break;
-                            // }
-
-                            Add(str, coord);
-                            if ((Parent.bKeepForms) && (stemmed.Length <= ss.Length))
-                            { // reminder
-                                Add(GetSuffix(ss, stemmed), coord + 1);
-                            }
-
-                        
+                        Add(code.suff, coord + 1);
                     }
-                    if (firststemmed.Length == 0)
-                        firststemmed = stemmed;
-                    nVoc++;
-                    if (nG != 0) break;
-                }
-
-                if (nG == 0)
-                {
-
-                    stemmed = firststemmed;
-                     // WORD_BEGIN_CHAR + ss + WORD_END_CHAR;
-                    Add(stemmed.Length > 0 ? stemmed : ss, coord);
-                    if ((Parent.bKeepForms) && (stemmed.Length>0) && (stemmed.Length<=ss.Length))
-                    {
-                        Add(GetSuffix(ss, stemmed), coord + 1);
-                    }
-                    /*                    for (int q = 0; q < news.Length; q += SUBWORD_LENGTH)
-                                        {
-                                            Add(news.Substring(q, Math.Min(news.Length - q, SUBWORD_LENGTH)), (uint)(coord + d));
-                                            d++;
-                                        }*/
-                }
+                 }
 
             }
 
-            /* Add word code into Index Builder
-             * coord must be greater with each call !!! 
-             Usually you shuold use AddWord to add word */
-
+            /// <summary>
+            /// Add word code into Index Builder. Coord must be greater with each call.
+            /// Usually you should use AddWord to add word
+            /// </summary>
+            /// <param name="code">unique word code</param>
+            /// <param name="coord">coordinate in text space</param>
             public void Add(string code, ulong coord)
             {
                 maxCoord = coord; // coord increases with each call

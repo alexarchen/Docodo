@@ -28,7 +28,8 @@ namespace Docodo
         public WebDataSource(string name, string url, string indextypes="") : base(name, url)
         {
             Name = name;
-            Path = new UriBuilder(url.Substring(0, url.LastIndexOf("/"))).ToString().ToLower();
+            if (!url.EndsWith("/")) url += "/";
+            Path = new UriBuilder(url).ToString().ToLower();
             host = new UriBuilder(Path).Host;
             //this.indextypes = "."+indextypes.Split(',').Aggregate((a, b) => a + "," + "."+b);
             this.indextypes = indextypes;
@@ -103,7 +104,10 @@ namespace Docodo
             string s = url.ToLower();
             if (s.Length == 0) return (null); 
             if (s[0] == '#') return (null);
-
+            if ((!s.Contains("://")) && (!s.Contains(":\\")))
+                {
+                s = this.Path + s;
+            }
 
             try
             {
