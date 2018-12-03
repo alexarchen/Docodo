@@ -18,7 +18,6 @@ namespace Docodo
         {
             
         }
-
         public IndexSequence(IndexSequence seq) 
         {
             self = new List<ushort>(seq.self);
@@ -155,12 +154,14 @@ namespace Docodo
         }
 
         List<ushort> self = new List<ushort>(); 
-        // index i < Count
+        // gets index i < Count
         public ushort this[int i]{ get => self[i];}
 
-        public bool order { get => R < 0; }
-        public int R = 0; // distance between words
-       // List<byte> Rank = new List<byte>();
+        //// if sequence is "exact", see below
+        public bool order { get => R < 0; set { R = (order?-1:1)*Math.Abs(R);} }
+        //// distance betwen words. If negative - "exact" sequence that keeps words order when compined by *, & 
+        public int R = 0; 
+       
 
 
         public void Write(BinaryWriter bin)
@@ -201,11 +202,11 @@ namespace Docodo
         }
 
         // Combine two parts of words, order does matter
-        public static IndexSequence operator *(IndexSequence seq1, IndexSequence seq2)
+        public static IndexSequence operator &(IndexSequence seq1, IndexSequence seq2)
         {
 //            int R = seq1.R;
 //            seq1.R = -1;
-            IndexSequence news = seq1 & seq2;
+            IndexSequence news = seq1 * seq2;
 
             // remove repeating coords
             //IndexSequence news1 = new IndexSequence();
@@ -214,14 +215,16 @@ namespace Docodo
         }
         // Combine results by & using distanse and order
 
-        public static IndexSequence operator &(IndexSequence seq1, IndexSequence seq2)
+        public static IndexSequence operator *(IndexSequence seq1, IndexSequence seq2)
         {
+            // only both "exact" sequences give "excat" result:
+            int absR = Math.Max(Math.Abs(seq1.R),Math.Abs(seq2.R));
+            int R = ((seq1.R<0)&&(seq2.R<0))?-absR:absR;
             
-            uint absR = (uint)Math.Abs(seq1.R);
-            int R = seq1.R;
+
             IndexSequence.Builder newSeq = new IndexSequence.Builder();
             //List<byte> newRank = newSeq.Rank;
-            newSeq.R = seq1.R;
+            newSeq.R = R;
             List<ulong> newGroup = new List<ulong>();
 
 
@@ -251,9 +254,9 @@ namespace Docodo
                 if (newGroup.Count > 0)
                 {// check
                     bool bfinish = false;
-                    if ((absR != 0) && (valToAdd - newGroup[newGroup.Count - 1] > absR)) bfinish = true;
+                    if ((absR != 0) && (valToAdd - newGroup[newGroup.Count - 1] > (ulong)absR)) bfinish = true;
                     else
-                    if (!((R >= 0) || (move[0]) || (IsInGr[0])))
+                    if ((R < 0) && (move[0]) && (!IsInGr[0])) // if order does matter, move[0] prefer to start new group
                      bfinish = true; 
 
                     if (bfinish)
@@ -282,7 +285,11 @@ namespace Docodo
         // combine results by logical OR
         public static IndexSequence operator +(IndexSequence seq1, IndexSequence seq2)
         {
+            int absR = Math.Max(Math.Abs(seq1.R),Math.Abs(seq2.R));
+            int R = ((seq1.R<0)&&(seq2.R<0))?-absR:absR;
+
             IndexSequence.Builder res = new IndexSequence.Builder();
+            res.R = R;
             //res.Capacity = Math.Max(seq1.Count, seq2.Count);
             IEnumerator<ulong> [] seqe = { seq1.GetEnumerator(), seq2.GetEnumerator() };
             bool[] Move = { true, true };

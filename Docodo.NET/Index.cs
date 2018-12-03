@@ -30,9 +30,60 @@ using System.Text.RegularExpressions;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
+
 namespace Docodo
 {
 
+static class LevenshteinDistance
+{
+    /// <summary>
+    /// Compute the distance between two strings.
+    /// </summary>
+    public static int Levenshtein(this string s, string t)
+    {
+        int n = s.Length;
+        int m = t.Length;
+        int[,] d = new int[n + 1, m + 1];
+
+        // Step 1
+        if (n == 0)
+        {
+            return m;
+        }
+
+        if (m == 0)
+        {
+            return n;
+        }
+
+        // Step 2
+        for (int i = 0; i <= n; d[i, 0] = i++)
+        {
+        }
+
+        for (int j = 0; j <= m; d[0, j] = j++)
+        {
+        }
+
+        // Step 3
+        for (int i = 1; i <= n; i++)
+        {
+            //Step 4
+            for (int j = 1; j <= m; j++)
+            {
+                // Step 5
+                int cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+
+                // Step 6
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost);
+            }
+        }
+        // Step 7
+        return d[n, m];
+    }
+}
 
     public class Index : IEnumerable<KeyValuePair<string,IndexSequence>>, IDisposable
     {
@@ -140,6 +191,15 @@ namespace Docodo
                 }
                 return base.Equals(obj);
             }
+            WordInfo [] wordInfos;
+            public struct WordInfo
+            {
+                public string Word;
+                public int nFound;
+                public string OriginalWord;
+                public int nOrigFound;
+            }
+            
         }
 
         public class ErrorSearchResult: SearchResult
@@ -304,97 +364,192 @@ namespace Docodo
             return (orVals);
             */
         }
-       
-        protected IndexSequence SearchWord(string word,bool bExact=false)
+
+
+        public const int MAX_LIKE_WORDS = 100; // Maximum matched words when searching word pattern
+        // Get list of words that match patter where _ - any letter
+        public string [] GetLikeWords(string word){
+            if (word.IndexOf('_')<0) return new string[]{word};
+            if (word.Length<2) return new string []{};
+            word = word.Replace("_",".*");
+            List<string> result = new List<string>();
+            foreach (Vocab voc in vocs){
+               result.AddRange(voc.Keys.Where((key)=>Regex.IsMatch(key,word)).Take(MAX_LIKE_WORDS));
+            }
+            result.AddRange(self.Keys.Where((key)=>Regex.IsMatch(key,word)).Take(MAX_LIKE_WORDS));
+            return (result.ToArray());
+        }
+        // Get list of word corrections if any by maximum similaraty to word using levenshtein
+        public string [] GetCloseWords(string word){
+            List<string> result = new List<string>();
+            foreach (Vocab voc in vocs){
+               string stemmed = voc.Stem(word);
+               if (voc.Search(stemmed)!=0) return new string[]{word}; // known word, no corrections needed
+               result.AddRange(voc.Keys.OrderBy((s)=>s.Levenshtein(stemmed)).Take(10).ToArray());
+            }
+            result.AddRange(self.Keys.OrderBy((s)=>s.Levenshtein(word)).Take(10).ToArray());
+            return (result.ToArray());
+        }
+
+
+
+        protected IndexSequence SearchWord(string word)
         {
             if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
             string stemmed = word;
-            
+            bool bExact = false;
 
-            IndexSequence res = new IndexSequence(/* Empty */);
+
+            if (word.ToUpper().Equals(word)) bExact = true;
+            word = word.ToLower();
+
+            IndexSequence total = null;
+
+            string []words = {word};
+
+            if (word.IndexOf('_')>=0){
+                words = GetLikeWords(word);
+            }
+
+
+
+
+            foreach (string wword in words)
+            {
+
             try
             {
-                var codes = GetWordCodes(word);
-                if ((codes != null) && (codes.Length>0)) {
-                    // take first only
-                    res = this[codes[0].code];
-                    if ((bKeepForms) && (bExact) && (codes[0].suff!=null))
+            
+                IndexSequence res = new IndexSequence();
+                var codes = GetWordCodes(wword);
+                if ((codes != null) && (codes.Length>0)) 
+                for (int q=0;q<codes.Length;q++)
+                if (self.Keys.Contains(codes[q].code))
+                {
+                    res = this[codes[q].code];
+                    
+
+
+                    if ((bKeepForms) && (bExact) && (codes[q].suff!=null))
                     {
                         res.R = -1;
-                        res *= this[codes[0].suff];
+                        IndexSequence seq = this[codes[q].suff];
+                        seq.R = -1;
+                        res *= seq;
                         // reduce close coords
                         IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
                         newres.AddRange(res);
                         res = newres.build();
                     }
+                    if (total==null)
+                    {
+                        total = res;
+                    }
+                    else
+                     total += res;
                 }
 
             }
             catch (Exception e)
-            {
-                
+             {
+                Console.WriteLine("Error search word: "+e.Message);
+             }
             }
-            return (res);
+           if (total==null) total = new IndexSequence();
+
+           if (bExact) total.R = -1;
+            return (total);
         }
 
         public class SearchOptions
         {
             public int dist; // max distance between words in letters
+            public bool DoCorrection; // do correction of mistaked in words
 
         }
-        private string PrepareRequest(string req,out string []_fields, bool keepshort = false)
-        {
-            List<string> fields = new List<string>();
-            /*  foreach (Match match in Regex.Matches(req, @"{*(\w+)[ ]*=(.+)}"))
-              {
-                  fields.Append($"_GEF(\"{match.Groups[1]}={match.Groups[2]}\") * ");
-                  //" GetField(\"${1}\",\"${2}\") * ");
-              }*/
 
-            req = Regex.Replace(req, @"[^\w(){}=|]|_+", " "); // delete incorrect symbols
+
+        protected delegate IndexSequence SearchFunc(string word);
+        protected class SearchSequence
+        {
+            IndexSequence res = new IndexSequence();
+            
+            // usually lowercase, can be UPPERCASE if exact search is needed
+            public string Name {get;} // variable name
+            public string Word {get; set;}
+            public int Cout {get => res.Count();}
+            public SearchFunc Func;
+            private bool bWasCalled = false;
+            public int Dist; // distance
+            public SearchSequence(string name,string word, SearchFunc func,int dist=0){
+              Name = name;
+              Word = word;
+              Func = func;
+              Dist = dist; 
+              wordInfo.Word = Word;
+              wordInfo.OriginalWord = Word;
+            }
+
+            public SearchResult.WordInfo wordInfo;
+            public IndexSequence d()
+            {
+              if (!bWasCalled)
+              {
+               res = Func(Word);
+               wordInfo.nFound = res.Count();
+               res.R = (res.R<0?-Word.Length-4:Dist+Word.Length);
+              }
+              return res;  
+
+            }
+
+            
+
+
+        }
+
+        protected string PrepareSearchRequest(string req,List<SearchSequence> funcs,out string fields, SearchFunc searchfunc=null, bool keepshort = false)
+        {
+            //List<string> fields = new List<string>();
+            fields = "";
+
+
+            req = Regex.Replace(req, @"[^\w(){}=~?|""]|_+", " "); // delete incorrect symbols
+            string f = "";
 
             req = Regex.Replace(req, @"{*(\w+)[ ]*=([\w|() ]+)}", (Match match) => {
-                string[] arr;
-                string l = PrepareRequest(match.Groups[2].ToString(), out arr, true); // like _GET("A")
-                l = Regex.Replace(l, @"_Get\(\""(\w+)\""\)", "_Getf(\""+match.Groups[1].ToString()+"=${1}\")");
-                fields.Add(l);
+                string dummy;
+                string l = PrepareSearchRequest(match.Groups[2].ToString(), funcs, out dummy, (s)=>SearchField(match.Groups[1].ToString(),s), true); // like _GET("A")
+                f+= (f.Length>0?"*":"")+ "("+l+")";
                 return "";// $"___{fields.Count-1}";
             });
 
-            _fields = fields.ToArray();
+            fields = f;
+
+            req = Regex.Replace(req,"{.*}",""); // remove not correct fields
+
+            //_fields = fields.ToArray();
+            req = req.Replace('?','_');
+
 
             if (!keepshort)
              req = Regex.Replace(req, @"\b\w{1,2}\b", " "); //delete words with 1,2 letters
 
             foreach (string st in stopWords) req = Regex.Replace(req, $@"\b{st}\b", ""); //delete stopwords
                                                                                          //req = Regex.Replace(req, @"\b(^\w|[^(+)])+\b", " ");
+
+            req = Regex.Replace(req, "\"(.*)\"", (s)=>{ return "("+s.Groups[1].Value.ToUpper()+")";}); // "a b" => A B
+
             req = Regex.Replace(req, @"\|", "+"); // replace OR operator
-
-            //req = Regex.Replace(req, @"\b(\w+)(\s*\|\s*(\w+)\b)+", "(${0})");
-            //req = Regex.Replace(req, @"\b(\w+)\s*\|\s*(\w+)\b", "_Get(\"${1}\") + _Get(\"${2}\") ");
-            //req = Regex.Replace(req, @"\|\s*(\w+)\b", " + _Get(\"${0}\")");
-
-            req = Regex.Replace(req, @"\b\s+\b", "*");
-            req = Regex.Replace(req, @"\)\s+\b", ")*");
-            req = Regex.Replace(req, @"\b\s+\(", "*(");
-
-            req = Regex.Replace(req, @"\b(?!___)(\w+)\b", "_Get(\"${0}\")");
-
-            //req = Regex.Replace(req, @"(?<!_GET\(\"")\b(?!_)\w +\b", "_Get(\"${0}\")");
+            // add ADD operator instead of space
+            req = Regex.Replace(req, @"(\b|\))(\s+)(\b|\()", (m)=>{return Regex.Replace(m.Groups[0].Value,m.Groups[2].Value,"*");});  
 
 
+            //req = Regex.Replace(req, @"\b(?!___)(\w+)\b", "_Get(\"${0}\")");
+            req = Regex.Replace(req, @"\b(\w+)\b", (m)=>{funcs.Add(new SearchSequence(""+(char)('A'+(funcs.Count)),m.Value,(searchfunc!=null)?searchfunc:(s)=>SearchWord(s))); return funcs.Last().Name+".d()";}); // a b => _1() _2()
 
-            //req = Regex.Replace(req, @"\b(\w+)\W*\+\W*(\w+)\b", "_Get(\"${1}\") + _Get(\"${2}\") ");
-            //req = Regex.Replace(req, @"\b(\w+)\s+(\w+)\b", "_Get(\"${1}\") * _Get(\"${2}\") ");
-            //req = Regex.Replace(req, @"\B\W*\+", " +");
 
-            //req += fields.ToString();
-            int q = 0;
-            foreach (string item in fields){
-                req = req.Replace($"___{q++}", $"({item})");
-            }
-
-            req = req.TrimEnd(new char[] { ' ', '*' });
+            //req = req.TrimEnd(new char[] { ' ', '*' });
 
             return req;
         }
@@ -492,12 +647,17 @@ namespace Docodo
                     }
                     req = Regex.Replace(req, @"\B-filter:([\w\*\?\\.()+{}/]+,?)+", " ");
 
-                    string[] fields;
-                    req = PrepareRequest(req,out fields);
+                    string fields;
+                    List<SearchSequence> seq = new List<SearchSequence>();
+                    req = PrepareSearchRequest(req,seq,out fields);
 
                     int R = 255;
                     if (opt != null) R = opt.dist;
+                    bool DoCorrection = (opt!=null)?opt.DoCorrection:true;
+                    
 
+
+/* 
                     Func<string, IndexSequence> Get = (word) => { IndexSequence seq = SearchWord(word); seq.R = Math.Sign(R) * (word.Length + Math.Abs(R)); return (seq); };
                     Func<string, IndexSequence> GetField = (namevalue) => {
                         // Search by field name=value using OR combinatin operator for value subwords
@@ -507,6 +667,12 @@ namespace Docodo
                     };
                     interpreter.SetFunction("_Get", Get);
                     interpreter.SetFunction("_Getf", GetField);
+    */
+
+
+
+                    seq.Select((s,i)=> new {name = s.Name, value=s}).All((o)=>{interpreter.SetVariable(o.name,o.value); o.value.Dist = R; return true;});
+
 
                     IndexSequence res=null;
                     IndexSequence resf = null;
@@ -523,11 +689,26 @@ namespace Docodo
                             return new ErrorSearchResult(s);
                         }
                     }
+
+                    /* try to improve result
+                    int nLowResult =  Math.Max(3,(int)(MaxCoord/100000));
+                    int nLowWordResut = Math.Max(10,(int)(MaxCoord/10000));
+                    if ((res.Count<nLowResult) && (DoCorrection)) 
+                    {
+                        // max 3 corrected words
+                        SearchSequence[] low = seq.Where((z)=>(z.Word.ToLower().Equals(z.Word)) && (z.Word.IndexOf('_')<0)).OrderBy((z)=>z.wordInfo.nFound).Where((z)=>z.wordInfo.nFound<nLowWordResut).Take(3).ToArray();
+                        List<string>[] replaces = new List<string>[low.Length];
+
+                        low[0].Word = 
+
+                    }
+*/
+
                     if (fields.Length > 0)
                     {
                         try
                         {
-                            resf = interpreter.Eval<IndexSequence>(fields.Aggregate((s1,s2)=> { return s1 + " "+ s2; }));
+                            resf = interpreter.Eval<IndexSequence>(fields);
                         }
                         catch (DynamicExpresso.Exceptions.DynamicExpressoException e)
                         {
@@ -1338,7 +1519,7 @@ namespace Docodo
                     if (stemmed.Length == 0) //not found neither in vocs nor in stemmers
                         l.Add((word, null));
                     else
-                        l.Add((word, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                        l.Add((stemmed, GetSuffixCode(word, word.Substring(stemmed.Length))));
                 }
 
             }
