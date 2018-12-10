@@ -2,7 +2,7 @@
   "profiles": {
     "Docodo": {
       "commandName": "Project",
-      "commandLineArgs": "server -i:Test\\index -source:web,http://localhost/tanja",
+      "commandLineArgs": "server -i:Test\\index -source:doc,d:\\temp\\bse",
       "workingDirectory": ".\\"
     }
   }

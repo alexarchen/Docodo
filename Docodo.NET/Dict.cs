@@ -86,7 +86,7 @@ namespace Docodo
     /* then save result to the disk using build() method */
     public class VocBuilder : SortedDictionary<string, int>
     {
-        public VocBuilder(IStemmer stemmer = null)
+        public VocBuilder(IStemmer stemmer = null) : base(new Index.IndexComparer())
         {
             this.stemmer = stemmer;
         }
@@ -140,7 +140,14 @@ namespace Docodo
             if (hasmatch) currNG &= ~Vocab.GROUP_NOT_EXCACT_WORD_MASK; // clear not-found bit
 
             foreach (int gr in replaceGroups)
+            {
+                if (replaces.ContainsKey(gr))
+                {
+                 if (replaces[gr]!=currNG) throw new Exception("Error duplicate replaces");
+                }
+                else
                 replaces.Add(gr, currNG);
+            }
 
 
             foreach (string word in grouplist)

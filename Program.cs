@@ -21,8 +21,10 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.IO;
 using System.Collections.Generic;
+using System.Collections;
 using System.Text;
 using Docodo;
+using System.Globalization;
 
 namespace Docodo
 {
@@ -34,10 +36,21 @@ namespace Docodo
         
         static public Index ind; // Global index
         
+        static void CreateVoc(string name){
+             if (name.ToLower().Equals("ru"))
+                {
+                    Console.WriteLine("Creating russian voc (wait a minute)...");
+                    OpenCorporaVocBuilder.CreateFromOpenCorpora("Dict\\ru\\dict.opcorpora.xml", "Dict\\ru.voc");
+                }
+                else
+                {
+                    Console.WriteLine($"Creating {name} voc (wait a minute)...");
+                    FreeLibVocBuilder.CreateFromFolder($"Dict\\{name}", $"Dict\\{name}.voc");
+              }
+        }
+
         static void Main(string[] args)
         {
-            
-   
             Console.Write("DOCODO Search Engine\nCopyrigt (c) 2018 Alexey Zakharchenko \n");
             int nPort = 9001;
             try
@@ -62,16 +75,7 @@ namespace Docodo
             // TODO: create voc command, like -cv:en
             foreach (string crvoc in (from a in args where a.StartsWith("-cv:") select a.Substring(4)))
             {
-                if (crvoc.ToLower().Equals("ru"))
-                {
-                    Console.WriteLine("Creating russian voc (wait a minute)...");
-                    OpenCorporaVocBuilder.CreateFromOpenCorpora("Dict\\ru\\dict.opcorpora.xml", "Dict\\ru.voc");
-                }
-                else
-                {
-                    Console.WriteLine($"Creating {crvoc} voc (wait a minute)...");
-                    FreeLibVocBuilder.CreateFromFolder($"Dict\\{crvoc}", $"Dict\\{crvoc}.voc");
-                }
+                CreateVoc(crvoc);
             }
 
             String basepath = ".";
@@ -148,16 +152,41 @@ namespace Docodo
             do
             {
 
-                Console.WriteLine("Press "+(ind.CanIndex?"i to index, ":"") + (ind.CanSearch ? " s to search, " : "") + " e to exit...");
+                Console.WriteLine("Press "+(ind.CanIndex?"I to index, ":"") + (ind.CanSearch ? " S to search, O for info, " : "") + "V to manage vocs, E to exit...");
                 c = Console.ReadKey(false).Key;
 
+                if (c==ConsoleKey.V)
+                {
+                    while (true)
+                    {
+                     Console.WriteLine("-----------\nCreate vocabs\nType voc name from list below or e to exit:");
+                     foreach (string f in Directory.GetDirectories("Dict\\").Select((s)=>s.Substring(s.LastIndexOf('\\')+1)))
+                     {
+                         Console.Write(f+",");
+                     }
+                     Console.WriteLine("");
+
+                     string line = Console.ReadLine();
+                     if (!line.Equals("e"))
+                     {
+                         CreateVoc(line);
+                     }
+                     else break;
+                    }
+
+                }
+                if (c==ConsoleKey.O)
+                {
+                  ShowInfo();
+                }
+                else
                 if (c==ConsoleKey.S)
                 {
                     Console.WriteLine("Type text to search, e - exit");
                     Console.Write("req:");
                     Console.InputEncoding = Encoding.Unicode;// Windows1251.GetEncoding();
                     string req;
-                    while (!(req = Console.ReadLine()).Equals("e"))
+                    while (!(req = ReadSearchRequest()).Equals("e"))
                     {
                          
                         Index.SearchResult result = ind.Search(req);
@@ -216,13 +245,6 @@ namespace Docodo
                     try
                     {
                         ind.CreateAsync().Wait();
-                        var hist = Index.CalcHistogram(ind);
-                        Console.WriteLine("Histogram:");
-                        foreach (var item in hist.Take(20))
-                        {
-                            Console.WriteLine($"{item.Key}: {item.Value}");
-                        }
-
                     }
                     catch (OperationCanceledException e)
                     {
@@ -241,6 +263,60 @@ namespace Docodo
             }
             while (c != ConsoleKey.E);
         }
+
+
+static string ReadSearchRequest(){
+    bool isInReq = true;
+    char c;
+    string res = "";
+    int Left = Console.CursorLeft;
+    do{
+      c = Console.ReadKey().KeyChar;
+
+      if (c!='\r')
+      {
+       if (c=='\b')  {if (res.Length>0) res = res.Remove(res.Length-1);}
+       else
+        res+=c; 
+
+       ind.GetSuggessions(res,12).ContinueWith((s)=>{
+           if (isInReq){
+           int lp =Console.CursorLeft;
+           int tp = Console.CursorTop;
+           int count=0;
+           ConsoleColor color = Console.ForegroundColor;
+           Console.ForegroundColor = ConsoleColor.Gray;
+           for (int q=0;q<12;q++) {Console.SetCursorPosition(0,tp+1+q); Console.Write(new String(' ',Console.WindowWidth));}
+           foreach (var ss in s.Result)
+           {
+            Console.SetCursorPosition(Left,tp+count+1);
+            Console.Write(res+ss);
+            count++;
+           }
+
+           Console.SetCursorPosition(lp,tp);
+           Console.ForegroundColor = color;
+           }
+       });
+
+      }
+    }while (c!='\r');
+
+ isInReq = false;
+ return res;
+}
+      static void ShowInfo(int numb=20)
+      {
+                        Console.WriteLine($"Index contains: {ind.Count} words");
+                        var hist = Index.CalcHistogram(ind);
+                        Console.WriteLine("Histogram:");
+                        foreach (var item in hist.Take(numb))
+                        {
+                            Console.WriteLine($"{item.Key}: "+String.Format("{0:f2}%", 100.0*item.Value/ind.MaxCoord));
+                        }
+                        
+
+      }
     }
 
     

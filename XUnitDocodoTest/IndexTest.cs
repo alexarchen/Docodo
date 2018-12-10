@@ -195,6 +195,9 @@ namespace XUnitDocodoTest
                 Assert.True(Enumerable.SequenceEqual(res.foundPages[0].pos, res.foundPages[1].pos));
 
                 res = index.Search("lady old",new Index.SearchOptions(){dist = 40});
+                foreach (int pos in res.foundPages[0].pos)
+                 Console.WriteLine(""+pos+":"+TestText1.Substring(pos,10));
+
                 Assert.Equal(10,res.foundPages[0].pos.Count);
                 res = index.Search("\"lady\" old",new Index.SearchOptions(){dist = 40});
                 Assert.Equal(8,res.foundPages[0].pos.Count);
@@ -213,7 +216,7 @@ namespace XUnitDocodoTest
                 Assert.Equal(9,res.foundPages[0].pos.Count);
 
                 res = index.Search("?an?",new Index.SearchOptions(){dist = 40});
-                Assert.True(Regex.Matches(TestText1,".*an.*").Count==res.foundPages[0].pos.Count);
+                Assert.Equal(Regex.Matches(TestText1.ToLower(),@"\w*an\w*").Count, res.foundPages[0].pos.Count);
                 
 
             }

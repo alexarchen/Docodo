@@ -1,6 +1,6 @@
 # DOCODO.NET
 Documental full-text document search engine .NET library written on C#
-using NET.Standard2.0
+for NET.Standard2.0
 
 Copyright (c) Alexey A. Zakharchenko
 GNU GPL 3
@@ -9,13 +9,13 @@ GNU GPL 3
 
   - Supports documents and pages
   - Search exact word positions on page
-  - Search closely placed words up to exact phrase
+  - Search closely placed words and to exact phrase
   - Fast indexing from different sources: files, http, DB
   - Search with vocabularies and stemmers
   - Morphological and "exact" search
 
-Библиотека Standard полнотестового документального поиска, написанная на C#
-Под .NET.Standard2.0
+Библиотека полнотестового документального поиска, написанная на C#
+под .NET.Standard2.0
 
 # Характеристики
 - Поддержка страниц документов
@@ -25,7 +25,7 @@ GNU GPL 3
 - Поиск со словарями и стемматорами
 - Морфологический и "точный" поиск
 
-# Intalling for NET.Core
+# Installing for NET.Core
 
 dotnet install DOCODO.NET
 

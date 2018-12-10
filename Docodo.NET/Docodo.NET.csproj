@@ -7,7 +7,7 @@
     <Description>DOCODO full-text powerful documental search engine
 - Support documents &amp; pages
 - Searches exact word coordinates
-- Searching with words distance limit up to exact phrase
+- Searching with words distance limit and exact phrase
 - High indexing speed
 - Supports different sources: files, http, DB
 - Supports different languages, you can add othes
@@ -20,10 +20,11 @@
     <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
     <PackageTags>search engine document page index full text</PackageTags>
-    <PackageReleaseNotes>1) Doesn't split words
-2) Added indexing without vocs but with stemmers
-</PackageReleaseNotes>
-    <Version>0.0.9</Version>
+    <PackageReleaseNotes>1) saves exact words instead of suffixes
+2) request suggesions
+3) search words by pattern with ? symbol
+4) exact search by using ""</PackageReleaseNotes>
+    <Version>0.1.0</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>

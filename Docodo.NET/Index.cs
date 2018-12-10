@@ -34,7 +34,7 @@ using System.Linq.Expressions;
 namespace Docodo
 {
 
-static class LevenshteinDistance
+static class Utils
 {
     /// <summary>
     /// Compute the distance between two strings.
@@ -83,7 +83,9 @@ static class LevenshteinDistance
         // Step 7
         return d[n, m];
     }
+
 }
+
 
     public class Index : IEnumerable<KeyValuePair<string,IndexSequence>>, IDisposable
     {
@@ -96,6 +98,7 @@ static class LevenshteinDistance
         const int MAX_FOUND_DOCS = 500; // maximum output found docs
         const int MAX_FOUND_PAGES_IN_DOC = 1000; // maximum output found pages in one document
         const char WORD_SUFFIX_CHAR = '$'; // char prefix of word stemming remainder
+        const char WORD_STEM_CHAR = WORD_SUFFIX_CHAR; // char prefix of word stemming remainder
         const char SUFFIX_DEVIDER_CHAR = ':';
         const char DOC_SEP = ':'; // document name from source name separator in pageslist
         const char WORD_BEGIN_CHAR = '<';
@@ -131,7 +134,16 @@ static class LevenshteinDistance
              this.vocs = new List<Vocab>(vocs);
         }
 
-        SortedList<string, IndexSequence> self = new SortedList<string, IndexSequence>();
+    public class IndexComparer: IComparer<string>
+    {
+        public int Compare (string a,string b){
+
+         return String.CompareOrdinal(a,b);
+        }
+
+    }
+
+        SortedList<string, IndexSequence> self = new SortedList<string, IndexSequence>(new IndexComparer());
 
         public bool InMemory { get; private set; } = false; /* Load into memory or leave on disk */
         public bool bKeepForms { get; set; } = true;/* Keep full forms of the words */
@@ -191,7 +203,7 @@ static class LevenshteinDistance
                 }
                 return base.Equals(obj);
             }
-            WordInfo [] wordInfos;
+            public WordInfo [] words;
             public struct WordInfo
             {
                 public string Word;
@@ -249,7 +261,14 @@ static class LevenshteinDistance
                 id = p.id;
             }
             public string id;
-            public float rank;
+            public float rank { get {
+                    float bonus = 0;
+                    if (pos.Count > 1) {
+                        for (int q = 1; q < pos.Count; q++)
+                            bonus+=30 / Math.Max(5,pos[q] - pos[q - 1]);
+                            }
+                    return 1 + bonus+(float)Math.Log(pos.Count());
+                } }
             public List<int> pos = new List<int>(); // positions on the page
             public string text; //surrounding text
             public override bool Equals(object obj)
@@ -369,26 +388,29 @@ static class LevenshteinDistance
         public const int MAX_LIKE_WORDS = 100; // Maximum matched words when searching word pattern
         // Get list of words that match patter where _ - any letter
         public string [] GetLikeWords(string word){
-            if (word.IndexOf('_')<0) return new string[]{word};
+            if ((word.IndexOf('_')<0) ||(!bKeepForms)) return new string[]{word};
             if (word.Length<2) return new string []{};
             word = word.Replace("_",".*");
-            List<string> result = new List<string>();
-            foreach (Vocab voc in vocs){
-               result.AddRange(voc.Keys.Where((key)=>Regex.IsMatch(key,word)).Take(MAX_LIKE_WORDS));
-            }
-            result.AddRange(self.Keys.Where((key)=>Regex.IsMatch(key,word)).Take(MAX_LIKE_WORDS));
-            return (result.ToArray());
+            string []s  = self.Keys.Where((key)=>(IsLetter(key[0]) && Regex.IsMatch(key,word))).Take(MAX_LIKE_WORDS).ToArray();
+            return (s);
         }
         // Get list of word corrections if any by maximum similaraty to word using levenshtein
         public string [] GetCloseWords(string word){
             List<string> result = new List<string>();
-            foreach (Vocab voc in vocs){
-               string stemmed = voc.Stem(word);
-               if (voc.Search(stemmed)!=0) return new string[]{word}; // known word, no corrections needed
-               result.AddRange(voc.Keys.OrderBy((s)=>s.Levenshtein(stemmed)).Take(10).ToArray());
-            }
             result.AddRange(self.Keys.OrderBy((s)=>s.Levenshtein(word)).Take(10).ToArray());
             return (result.ToArray());
+        }
+
+        public async Task<string []>  GetSuggessions(string req,int n=10){
+            // TODO: take int acount word relations
+            if (req.Length<MIN_WORD_LENGTH)  return new string[]{};
+            string lastword = Regex.Split(req,@"\b").Last((s)=>s.Length>0).ToLower();
+            
+            if (lastword.Length>=MIN_WORD_LENGTH){
+                return await Task.Factory.StartNew<string[]>(()=>self.Where((s)=>(s.Key[0]>='A') && (s.Key.StartsWith(lastword,StringComparison.Ordinal)) && (s.Key.Length>lastword.Length)).OrderBy((s)=>-s.Value.Count).Select((s)=>s.Key.Substring(lastword.Length)).Take(n).ToArray());
+            }
+
+          return new string[]{};
         }
 
 
@@ -400,7 +422,7 @@ static class LevenshteinDistance
             bool bExact = false;
 
 
-            if (word.ToUpper().Equals(word)) bExact = true;
+            if ((word.ToUpper().Equals(word)) && (bKeepForms)) bExact = true;
             word = word.ToLower();
 
             IndexSequence total = null;
@@ -408,11 +430,14 @@ static class LevenshteinDistance
             string []words = {word};
 
             if (word.IndexOf('_')>=0){
-                words = GetLikeWords(word);
+                if (bKeepForms){
+                 bExact = true;
+                 words = GetLikeWords(word);
+                }
+                else{
+                    return new IndexSequence();
+                }
             }
-
-
-
 
             foreach (string wword in words)
             {
@@ -421,9 +446,31 @@ static class LevenshteinDistance
             {
             
                 IndexSequence res = new IndexSequence();
-                var codes = GetWordCodes(wword);
-                if ((codes != null) && (codes.Length>0)) 
-                for (int q=0;q<codes.Length;q++)
+                var codes = GetWordCodes(wword).Select((c)=>c.code);
+                if (codes.Count()>0) 
+                {
+
+                   var selfcodes = codes.Where((s)=>Regex.IsMatch(s.Substring(0,1),@"\p{L}"));
+                   var knowcodes = codes.Except(selfcodes);
+                   // search for know or exact words if any
+                   foreach (string code in (!bExact?(knowcodes.Count()>0?knowcodes:selfcodes.Take(1)):selfcodes.Take(1)))
+                   {
+                    if (self.Keys.Contains(code))
+                     {
+                      res = this[code];  
+                           
+                      if (total==null)
+                      {
+                        total = res;
+                      }
+                      else
+                       total += res;
+
+                    }
+                   }
+                }
+
+               /*  for (int q=0;q<codes.Length;q++)
                 if (self.Keys.Contains(codes[q].code))
                 {
                     res = this[codes[q].code];
@@ -447,7 +494,7 @@ static class LevenshteinDistance
                     }
                     else
                      total += res;
-                }
+                } */
 
             }
             catch (Exception e)
@@ -567,8 +614,8 @@ static class LevenshteinDistance
                 DocPage _p = PagesList.GetPage(coord);
                 if (!_p.Equals(prevp))
                 {
-                    if (lastResultDocPage != null)
-                        lastResultDocPage.rank = 1 + (float)Math.Log(lastResultDocPage.pos.Count());
+                    //if (lastResultDocPage != null)
+                    //    lastResultDocPage.rank = 
                     lastResultDocPage = new ResultDocPage(_p);
                     lastResultDocPage.pos.Add((int)(coord - _p.coord));
                     result.foundPages.Add(lastResultDocPage);
@@ -603,8 +650,10 @@ static class LevenshteinDistance
             }
             // retrieve surrounding text
 
-            if (lastResultDocPage != null)
-                lastResultDocPage.rank = 1 + (float)Math.Log(lastResultDocPage.pos.Count());
+           // if (lastResultDocPage != null)
+//                lastResultDocPage.rank = 1 + (float)Math.Log(lastResultDocPage.pos.Count());
+
+
 
             return result;
         }
@@ -777,6 +826,8 @@ static class LevenshteinDistance
 
                         result.foundDocs = new HashSet<ResultDocument>((from doc in result.foundDocs orderby doc.rank select doc).ToArray());
 
+                        result.words = seq.Select((i)=>i.wordInfo).ToArray();
+
                         return result;
 
                     }
@@ -831,7 +882,7 @@ static class LevenshteinDistance
                     {
                         
                         
-                        dict.Add("(" + KNOWN_WORD_CHAR + index.GetWordsGroup(pair.Key.Substring(1)) +")",
+                        dict.Add("("+index.GetWordsGroup(pair.Key.Substring(1)) +")",
                             pair.Value);
                     }
                     else
@@ -866,9 +917,7 @@ static class LevenshteinDistance
                         do
                         {
                             string s = bin.ReadString();
-                            
-
-                           
+                                          
                             //if (n > 0)
                             //{
                                 if (InMemory)
@@ -914,7 +963,7 @@ static class LevenshteinDistance
                 }
                 catch (Exception e)
                 {
-
+                  Console.WriteLine("Can't load: "+e.Message);
                 }
             }
             return (false);
@@ -1175,7 +1224,7 @@ static class LevenshteinDistance
                     list.Sort(new Comparison<KeyValuePair<string, int>>((a, b) =>
                     {
                     // compare by words and then by coordinates
-                    int i = a.Key.CompareTo(b.Key);
+                    int i = String.CompareOrdinal(a.Key,b.Key);
                         if (i == 0)
                         {
                             if (shift_coords) return (maxCoords[a.Value].CompareTo(maxCoords[b.Value]));
@@ -1294,16 +1343,8 @@ static class LevenshteinDistance
 
         protected virtual bool IsLetter(char l) 
          {   
-             /*
-             if ((l >= 'a') && (l <= 'z')) return (true);
-             if ((l >= 'а') && (l <= 'я')) return (true);
-             if ((l >= '0') && (l <= '9')) return (true);
-             if ((l >= 'A') && (l <= 'Z')) return (true);
-             if ((l >= 'А') && (l <= 'Я')) return (true);
-             if ((l == 'ё') || (l == 'Ё')) return (true);
-             */
-             if (l == '_') return (false);
-             return Regex.Match("" + l, @"\w").Success;
+//             if (l == '_') return (false);
+             return Regex.IsMatch(""+l,@"\p{L}");
          }
 
 
@@ -1326,6 +1367,8 @@ static class LevenshteinDistance
             public DocPage(Document _doc, string _id) { doc = _doc; id = _id; }
         }
 
+        // class IndexPageList used to define page by coordinate,
+        // it remembers last GetPage's result and use it to speed up calculations
         class IndexPageList : Dictionary<ulong, DocPage>
         {
             List<Document> DocsList = new List<Document>();
@@ -1366,7 +1409,7 @@ static class LevenshteinDistance
                 if (prevc == 0xFFFFFFFF) { _enum = this.AsEnumerable().GetEnumerator(); _enum.MoveNext(); prevc = 0; }
                 else
                 {
-                    if (_enum.Current.Key == coord) return (_enum.Current.Value);
+                    //if (_enum.Current.Key == coord) return (_enum.Current.Value);
                     if ((_enum.Current.Key > coord) && (prevc <= coord)) return _enum.Current.Value;
                     if (_enum.Current.Key > coord) { _enum = this.AsEnumerable().GetEnumerator(); _enum.MoveNext(); prevc = 0; }
                 }
@@ -1439,8 +1482,9 @@ static class LevenshteinDistance
 
         IndexPageList PagesList;
 
-        protected static string GetSuffixCode(string word, string suf)
+        protected virtual string GetSuffixCode(string word, string suf)
         {
+            return null;// in new version
             string str = "";
             if (suf.Length <= 2)
                 str = ""+WORD_SUFFIX_CHAR + word[0] + SUFFIX_DEVIDER_CHAR + suf;
@@ -1469,9 +1513,10 @@ static class LevenshteinDistance
             string stemmed = word;
             int nG = 0;
             int nVoc = 0;
-            if (stopWords.Contains(word)) return null;
+            if (stopWords.Contains(word)) return new (string,string)[]{};
             string firststemmed = "";
             List<(string code, string suff)> l = new List<(string code, string suff)>();
+            l.Add((word,null)); // add full form of word
             try
             {
 
@@ -1481,7 +1526,7 @@ static class LevenshteinDistance
                     if ((voc != null) && (word[0] >= voc.Range.begin) && (word[0] <= voc.Range.end) && ((stemmed = voc.Stem(word)) != null) && ((nG = voc.Search(stemmed)) != 0))
                     {
                         string str = FromInt((nVoc << 24) | (nG & Vocab.GROUP_NUMBER_MASK));
-                        l.Add((str, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                        l.Add((str, null /* GetSuffixCode(word, word.Substring(stemmed.Length))*/));
                     }
                     if (firststemmed.Length == 0)
                         firststemmed = stemmed;
@@ -1516,10 +1561,11 @@ static class LevenshteinDistance
                             }
                         }
                     }
-                    if (stemmed.Length == 0) //not found neither in vocs nor in stemmers
-                        l.Add((word, null));
-                    else
-                        l.Add((stemmed, GetSuffixCode(word, word.Substring(stemmed.Length))));
+                    //if (stemmed.Length == 0) //not found neither in vocs nor in stemmers
+                    //    l.Add((word, null));
+                    //else
+                    if ((stemmed.Length>0) && (!stemmed.Equals(word,StringComparison.Ordinal)))
+                        l.Add((WORD_STEM_CHAR+stemmed, null /*GetSuffixCode(word, word.Substring(stemmed.Length))*/));
                 }
 
             }
@@ -1540,7 +1586,7 @@ static class LevenshteinDistance
          * ....
          * Index index = bldr.Build();
          */
-        public class Builder : SortedList<string,IndexSequence.Builder>
+        public class Builder : SortedDictionary<string,IndexSequence.Builder>
         {
             public int nTmpIndex = 0;
             private static int nBuilder = 0; // holds unique builder id
@@ -1548,7 +1594,7 @@ static class LevenshteinDistance
             Index Parent;
 
             // create Builder using Index's settings from parent
-            public Builder(Index parent) : base()
+            public Builder(Index parent) : base(new IndexComparer())
             {
                 Parent = parent;
                 MaxItems = parent.MaxTmpIndexItems;
