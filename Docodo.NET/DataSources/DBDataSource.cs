@@ -2,7 +2,10 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Entity;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,29 +29,16 @@ namespace Docodo
          * connect - connect string,
          * select - select SQL
          * indextype: */
-        // File:<FieldName> - relative to the base path file name stored in field <FieldName>,
-        // Blob[:<FieldName>] - documents are stored in blob (first or <FieldName>)
-        // Text[:<FieldName>] - index texts stored in TEXT fields (or one field <FieldName>) 
+        // File - relative to the base path file name stored in field <FieldName>,
+        // Blob - documents are stored in blob (first or <FieldName>)
+        // Text - index texts stored in TEXT fields (or one field <FieldName>) 
 
-        public DBDataSourceBase(string name, string basepath, string connect, string select, string indextype) :base (name,basepath)
+        public DBDataSourceBase(string name, string basepath, string connect, string select, IndexType indextype, string datafieldname=null) :base (name,basepath)
         {
             ConnectString = connect;
             SelectString = select;
-            switch (indextype.ToLower().Split(':')[0])
-            {
-                case "Text":
-                indexType = IndexType.Text;
-                break;
-                case "File":
-                    indexType = IndexType.File;
-                    break;
-                case "Blob":
-                    indexType = IndexType.Blob;
-                    break;
-            }
-            FieldName = "";
-            if (indextype.Contains(":"))
-                FieldName = indextype.Split(':')[1];
+            indexType = indextype;
+            FieldName = datafieldname??"";
         }
 
         // Add document from or TEXT field
@@ -142,20 +132,78 @@ namespace Docodo
             return item;
         }
 
+
     }
 
-    /* Data Source to index documents kept in blob fields 
-    public class DBBlobDataSource: IIndexDataSource
+
+    public class DBSetDataSource<T> : DBDataSourceBase where T : class
     {
+        
+        private DbSet<T> set;
+        private Func<T, bool> select;
 
+        public DBSetDataSource(string name,string basepath,DbSet<T> entities,IndexType indextype, string datafieldname=null,Func<T, bool> select=null) : base(name, basepath, "", "", indextype,datafieldname)
+        {
+            if (indexType == IndexType.Blob) throw new Exception("Not supported");
+            set = entities;
+            this.select = select;
+
+        }
+        protected override void Navigate(ConcurrentQueue<IIndexDocument> queue, CancellationToken token)
+        {
+            List<(string name,Type type)> fields = 
+             typeof(T).GetProperties().Where(p => ((p.GetMethod != null) && (p.PropertyType.IsPublic) && (!p.PropertyType.IsArray) && (!p.PropertyType.IsClass))).Select(p => (p.Name, p.PropertyType)).ToList() ;
+
+            int id = 1;
+            set.Where(select).AsQueryable().ForEachAsync<T>((item) =>
+            {
+          
+                token.ThrowIfCancellationRequested();
+
+                StringBuilder builder = new StringBuilder();
+                string primaryname = "";
+                string name = ""+(id++);
+                string fname = "";
+                String text = "";
+
+
+                foreach (var field in fields)
+                {
+                    string val = item.GetType().GetProperty(field.name).GetGetMethod().Invoke(item, null)?.ToString();
+
+                    if (val!=null)
+                    {
+                        if (field.name.Equals(FieldName)) fname = val;
+                        if (field.name.ToLower().Equals("id")) primaryname = val;
+
+
+                        builder.Append(field.name + "=" + val + "\n");
+                    }
+                }
+                if (primaryname.Length > 0) name = primaryname;
+                builder.Append("Name=" + name + "\n");
+
+                switch (indexType)
+                {
+                    case IndexType.File:
+                        if (fname.Length > 0)
+                            AddRecord(name, fname, builder.ToString(), queue);
+                        break;
+                    case IndexType.Text:
+                        if (text.Length > 0)
+                            AddRecord(name, text.ToCharArray(), builder.ToString(), queue);
+                        break;
+
+                }
+            },token);
+
+        }
     }
-    */
-
 
     public class MySqlDBDocSource: DBDataSourceBase
     {
 
-        public MySqlDBDocSource(string name, string basepath, string connect, string select, string indextype) : base(name, basepath, connect, select, indextype)
+        public MySqlDBDocSource(string name, string basepath, string connect, string select, IndexType indextype,string datafieldname=null) : base(name, basepath, connect, select, indextype,datafieldname)
         {
 
         }

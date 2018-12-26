@@ -205,6 +205,13 @@ namespace Docodo
         virtual public void Dispose()
         {
             cancellationTokenSource.Cancel();
+            T item;
+            foreach(var f in filesToDo)
+            {
+                if (f.GetType().IsInstanceOfType(typeof(IDisposable)))
+                 ((IDisposable)f).Dispose();
+            }
+
             filesToDo = new ConcurrentQueue<T>();
         }
 

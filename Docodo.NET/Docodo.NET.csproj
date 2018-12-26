@@ -31,6 +31,7 @@
 
  <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
+    <PackageReference Include="EntityFramework" Version="6.2.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.8.9" />
     <PackageReference Include="iTextSharp" Version="5.5.13" />
     <PackageReference Include="MySql.Data" Version="8.0.13" />

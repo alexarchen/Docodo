@@ -193,6 +193,8 @@ static class Utils
             public List<ResultDocPage> foundPages = new List<ResultDocPage>();
             public bool Success = true;
             public string Error { get; protected set; } ="";
+            public const char BEGIN_MATCHED_SYMBOL= 'ˋ';
+            public const char END_MATCHED_SYMBOL = 'ˊ';
             public override bool Equals(object obj)
             {
                 if (obj.GetType()==typeof(SearchResult))
@@ -232,6 +234,7 @@ static class Utils
             public HashSet<ResultDocPage> pages=new HashSet<ResultDocPage>();
             public Dictionary<string, string> headers;
             public float rank;
+            public string summary;
             public override bool Equals(object obj)
             {
                 if (obj.GetType() != GetType()) return false;
@@ -800,7 +803,7 @@ static class Utils
                                             {
                                                 // TODO:  Select words in text
                                                 /* For example */
-                                                headers = headers.Insert(doc.pages.First().pos[0], "->");
+                                                headers = new SpannableString.Builder().Add(headers,doc.pages.First().pos.ToArray());
                                             }
                                             doc.MakeHeaders(headers);
                                             doc.pages.RemoveWhere((p) => { return p.id.Equals("0"); });
@@ -808,14 +811,14 @@ static class Utils
                                             {
                                                 string text = document[page.id].text;
                                                 // TODO: Select words
-                                                int[] Range = { 0, 0 };
-                                                Range[0] = Math.Min(Math.Max(0, page.pos.Min() - 64), text.Length);
-                                                Range[1] = Math.Min(Math.Min(page.pos.Max() + 64, text.Length), Range[0] + 256);
-
-                                                page.text = PreparePageText(text.Substring(Range[0], Range[1] - Range[0]));
-
-
+                                                page.text = PreparePageText(page,text);
+                                                
                                             }
+                                            if (doc.pages.Count > 0)
+                                            {
+                                               doc.summary = doc.pages.OrderBy(pg => pg.rank).Take(3).OrderBy(pg => pg.id).Select((pg) => pg.text).Aggregate((a, b) => a + " ... " + b);
+                                            }
+
                                             document.Dispose();
                                         }
                                     }
@@ -843,13 +846,137 @@ static class Utils
             Console.WriteLine("Not fond!");
             return (new SearchResult());
         }
-        private static string PreparePageText(string text)
+
+        internal class StringSpan
         {
-            text = Regex.Replace(text, @"\b\W*\.+\W*\b", ". ");
-            text = Regex.Replace(text, @"\b\W*\?+\W*\b", "? ");
-            text = Regex.Replace(text, @"\b\W*!+\W*\b", "! ");
-            text = Regex.Replace(text, @"\b\W*:+\W*\b", ": ");
-            text = Regex.Replace(text, @"\b\W*,+\W*\b", ", ");
+            public int format;
+            public string text;
+        }
+
+        internal class SpannableString : LinkedList<StringSpan>
+        {
+            public SpannableString Substring(int start,int len)
+            {
+                Builder res = new Builder();
+
+                int l = 0;
+                LinkedListNode<StringSpan> sp = First;
+            
+                do
+                {
+                    l += sp.Value.text.Length;
+                    if ((res.Count == 0) && (l > start))
+                    {
+                        // start 
+                        if (sp.Value.format != 0)
+                        {
+                            res.Add(sp.Value);
+                        }
+                        else
+                            res.Add(sp.Value.text.Substring(start - l + sp.Value.text.Length),0);
+                    }
+                    else
+                    if (res.Count > 0)
+                    {
+                        if (l >= start + len)
+                        {
+                            // finish
+                            if (sp.Value.format != 0)
+                            {
+                                res.Add(sp.Value);
+                            }
+                            else
+                            {
+                                res.Add(sp.Value.text.Substring(0,start+len - l + sp.Value.text.Length), 0);
+                            }
+                            break;
+                        }
+                        res.Add(sp.Value);
+                    }
+
+
+                } while ((sp = sp.Next) != null);
+
+                return res;
+            }
+
+            public SpannableString RegexReplace(string pattern, string replace)
+            {
+                foreach (var sp in this)
+                {
+                    sp.text = Regex.Replace(sp.text, pattern, replace);
+                }
+                return this;
+            }
+
+            public static implicit operator string (SpannableString st)
+            {
+                string res = "";
+                foreach (StringSpan sp in st){
+                    sp.text.Replace(SearchResult.BEGIN_MATCHED_SYMBOL, '\'');
+                    sp.text.Replace(SearchResult.END_MATCHED_SYMBOL, '\'');
+                    if (sp.format != 0) res += $"{SearchResult.BEGIN_MATCHED_SYMBOL}{sp.text}{SearchResult.END_MATCHED_SYMBOL}";
+                    else res += sp.text;
+                }
+                return res;
+            }
+
+            public class Builder
+            {
+                SpannableString res = new SpannableString();
+                public static implicit operator SpannableString(Builder b) { return b.res; }
+                public static implicit operator string(Builder b) { return b.res; }
+                public Builder Add(string _text,int _format)
+                {
+                    res.AddLast(new StringSpan() { format = _format, text = _text});
+                    return this;
+                }
+
+                public Builder Add(string text, int [] startwords)
+                {
+                    int lastpos = 0;
+                    foreach (var pos in startwords)
+                    {
+                        Add(text.Substring(lastpos, pos - lastpos), 0);
+                        int wordend = Regex.Match(text.Substring(pos), @"(?<=\w)\b").Index;
+                        Add(text.Substring(pos, wordend), 1);
+                        lastpos = pos + wordend;
+                    }
+                    Add(text.Substring(lastpos), 0);
+                    return this;
+                }
+
+                public Builder Add(StringSpan sp)
+                {
+                    res.AddLast(sp);
+                    return this;
+                }
+
+                public int Count { get => res.Count; }
+
+            }
+        }
+
+
+        private static string PreparePageText(ResultDocPage page,string text)
+        {
+            // first define spanns
+            SpannableString.Builder spans = new SpannableString.Builder();
+            spans.Add(text, page.pos.ToArray());
+
+            int[] Range = { 0, 0 };
+            Range[0] = Math.Min(Math.Max(0, page.pos.Min() - 64), text.Length);
+            Range[1] = Math.Min(Math.Min(page.pos.Max() + 64, text.Length), Range[0] + 256);
+
+            SpannableString res = ((SpannableString)spans).Substring(Range[0], Range[1] - Range[0]);
+
+            res = res.RegexReplace(@"\b\W*\.+\W*\b", ". ");
+            res = res.RegexReplace(@"\b\W*\?+\W*\b", "? ");
+            res = res.RegexReplace(@"\b\W*!+\W*\b", "! ");
+            res = res.RegexReplace(@"\b\W*:+\W*\b", ": ");
+            res = res.RegexReplace(@"\b\W*,+\W*\b", ", ");
+
+            text = res;
             text = text.Replace("\r", " ");
             text = text.Replace("\n", " ");
             return (text);
@@ -1807,84 +1934,85 @@ static class Utils
                 do
                 {
 
-                 //   if (cancel.Token.IsCancellationRequested) break;
+                    //   if (cancel.Token.IsCancellationRequested) break;
 
-                    IIndexDocument doc = source.Next();
-
-                    if (doc == null) break;
-
-                    Console.WriteLine("ID:{0} <-{1}", Task.CurrentId, doc.Name);
-                    // TODO: File must fit RAM
-                    index.AddDoc(source.Name,doc.Name);
-                    
-                    foreach (IndexPage page in doc)
+                    using (IIndexDocument doc = source.Next())
                     {
-                    
-                        try
+
+                        if (doc == null) break;
+
+                        Console.WriteLine("ID:{0} <-{1}", Task.CurrentId, doc.Name);
+                        // TODO: File must fit RAM
+                        index.AddDoc(source.Name, doc.Name);
+
+                        foreach (IndexPage page in doc)
                         {
-                            String c = page.text.ToLower(); 
-                            if (c.Length == 0) continue;
 
-                            if (page.id.Equals("0"))
+                            try
                             {
-                                string pagetext = page.text;
-                                // headers page
-                                using (StringReader sr = new StringReader(pagetext))
+                                String c = page.text.ToLower();
+                                if (c.Length == 0) continue;
+
+                                if (page.id.Equals("0"))
                                 {
-                                    try
+                                    string pagetext = page.text;
+                                    // headers page
+                                    using (StringReader sr = new StringReader(pagetext))
                                     {
-                                        while (true)
+                                        try
                                         {
-                                            string line = sr.ReadLine();
-
-                                            if (line == null) break;
-                                            line = line.ToLower();
-                                            string[] fields = line.Trim('\n').Split('=');
-                                            if (fields[0].Length >= MIN_WORD_LENGTH)
+                                            while (true)
                                             {
-                                                var matches = Regex.Split(fields[1], "\\b");//Regex.Matches(fields[1], @"\b\w+\b");
-                                                int dc = fields[0].Length+1;
-                                                foreach (var match in matches)
+                                                string line = sr.ReadLine();
+
+                                                if (line == null) break;
+                                                line = line.ToLower();
+                                                string[] fields = line.Trim('\n').Split('=');
+                                                if (fields[0].Length >= MIN_WORD_LENGTH)
                                                 {
-                                                    if ((match.Length >= 1) &&  (IsLetter(match[0]))) //&& (!stopWords.Contains(match)))
+                                                    var matches = Regex.Split(fields[1], "\\b");//Regex.Matches(fields[1], @"\b\w+\b");
+                                                    int dc = fields[0].Length + 1;
+                                                    foreach (var match in matches)
                                                     {
-                                                        //coord += (ulong)(fields[0].Length);
-                                                        index.Add(FIELD_NAME_CHAR + fields[0], (uint)(coord + (ulong)(dc-1)));
-                                                        index.AddWord(match.ToLower(), coord + (ulong)dc);
+                                                        if ((match.Length >= 1) && (IsLetter(match[0]))) //&& (!stopWords.Contains(match)))
+                                                        {
+                                                            //coord += (ulong)(fields[0].Length);
+                                                            index.Add(FIELD_NAME_CHAR + fields[0], (uint)(coord + (ulong)(dc - 1)));
+                                                            index.AddWord(match.ToLower(), coord + (ulong)dc);
+                                                        }
+                                                        dc += match.Length;
                                                     }
-                                                    dc += match.Length;
                                                 }
+                                                coord += (ulong)line.Length + 1; // +1 from \n
                                             }
-                                            coord += (ulong) line.Length+1; // +1 from \n
                                         }
+                                        catch (EndOfStreamException e)
+                                        { }
                                     }
-                                    catch (EndOfStreamException e)
-                                    { }
+                                    index.EndPage(page.id, coord);
+
+                                    continue;
                                 }
+
+                                foreach (Match m in Regex.Matches(c, @"\p{L}+|\p{N}+"))
+                                {
+                                    if ((m.Value.Length >= MIN_WORD_LENGTH) && (m.Value.Length <= MAX_WORD_LENGTH))
+                                        index.AddWord(m.Value, coord + (uint)m.Index);
+                                }
+                                coord += (uint)c.Length;
                                 index.EndPage(page.id, coord);
+                                //         nextCoord.Add(coord,cancel.Token);
+                                //       Console.WriteLine($"Task {Task.CurrentId} pushed next coord {coord}");
 
-                                continue;
                             }
-
-                            foreach (Match m in Regex.Matches(c,@"\p{L}+|\p{N}+"))
+                            catch (Exception e)
                             {
-                                if ((m.Value.Length>=MIN_WORD_LENGTH) && (m.Value.Length<=MAX_WORD_LENGTH))
-                                 index.AddWord(m.Value,coord + (uint)m.Index);
+                                Console.WriteLine("Error parsing file {0}: {1}", doc.Name, e.Message);
                             }
-                            coord += (uint)c.Length;
-                            index.EndPage(page.id, coord);
-                   //         nextCoord.Add(coord,cancel.Token);
-                     //       Console.WriteLine($"Task {Task.CurrentId} pushed next coord {coord}");
-                            
-                        }
-                        catch (Exception e)
-                        { 
-                            Console.WriteLine("Error parsing file {0}: {1}", doc.Name, e.Message);
+
                         }
 
                     }
-
-                    doc.Dispose();
                 }
                 while (true);
 

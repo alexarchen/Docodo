@@ -53,7 +53,7 @@ namespace XUnitDocodoTest
 
             virtual public void Reset() { }
 
-            List<IndexPage> pages = new List<IndexPage>(new IndexPage[] { new IndexPage("1", TestText1) });
+            List<IndexPage> pages = new List<IndexPage>(new IndexPage[] { new IndexPage("0", "Name=Test"), new IndexPage("1", TestText1) });
 
             bool HasNext = true;
             public IIndexDocument Next(bool w)
@@ -77,9 +77,10 @@ namespace XUnitDocodoTest
                 return GetEnumerator();
             }
 
+            public bool Disposed { get; private set; } = false;
             public void Dispose()
             {
-
+                Disposed = true;
             }
         }
 
@@ -318,12 +319,31 @@ namespace XUnitDocodoTest
         }
 
         [Fact]
+        public async Task PageTextTest()
+        {
+            int N = 10;
+            SamePageDataSource ds = new SamePageDataSource(N);
+            using (Index index = new Index("PageTextTest"))
+            {
+                index.AddDataSource(ds);
+                await index.CreateAsync();
+
+                Index.SearchResult res = index.Search("\"old lady\"");
+                Assert.Contains(Index.SearchResult.BEGIN_MATCHED_SYMBOL + "old" + Index.SearchResult.END_MATCHED_SYMBOL, res.foundPages[0].text);
+                res = index.Search("Test");
+                Assert.Contains(Index.SearchResult.BEGIN_MATCHED_SYMBOL + "Test" + Index.SearchResult.END_MATCHED_SYMBOL, res.foundDocs.First().headers["Name"]);
+            }
+            Directory.Delete("PageTextTest", true);
+            
+        }
+
+        [Fact]
         public void MemUseTest()
         {
             Index index = new Index("MemTest");
             int N = 1000;
             index.AddDataSource(new SamePageDataSource(N));
-            index.CreateAsync();
+            index.CreateAsync().ContinueWith((i)=> { Directory.Delete("MemTest", true); });
             Thread.Sleep(3000);
             long startMem = GC.GetTotalMemory(false);
 
@@ -340,7 +360,7 @@ namespace XUnitDocodoTest
                 return maxmem;
             }).ContinueWith((i) => { Assert.True(i.Result-startMem < 10000000); }).Wait();
 
-            Directory.Delete("MemTest", true);
+            
 
         }
     }
