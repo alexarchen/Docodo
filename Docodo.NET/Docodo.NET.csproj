@@ -9,8 +9,9 @@
 - Searches exact word coordinates
 - Searching with words distance limit and exact phrase
 - High indexing speed
+- Request suggession
 - Supports different sources: files, http, DB
-- Supports different languages, you can add othes
+- Supports different languages
 - Multithreaded
 - Scalable
 </Description>
@@ -20,13 +21,12 @@
     <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
     <PackageTags>search engine document page index full text</PackageTags>
-    <PackageReleaseNotes>1) saves exact words instead of suffixes
-2) request suggesions
-3) search words by pattern with ? symbol
-4) exact search by using ""</PackageReleaseNotes>
-    <Version>0.1.0</Version>
+    <PackageReleaseNotes>1) found words markup added
+2) DBSet datasource added</PackageReleaseNotes>
+    <Version>0.1.1</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Copyright>Copyright @ Alexey Zakharchenko</Copyright>
   </PropertyGroup>
 
  <ItemGroup>
