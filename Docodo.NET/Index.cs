@@ -255,6 +255,8 @@ static class Utils
                 }
             }
 
+            public List<string> foundWords;
+
         }
         /* Search result documet page class */
         public class ResultDocPage 
@@ -420,7 +422,7 @@ static class Utils
 
         protected IndexSequence SearchWord(string word)
         {
-            if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
+      //      if (word.Length < MIN_WORD_LENGTH) return (new IndexSequence(/* Empty */));
             string stemmed = word;
             bool bExact = false;
 
@@ -453,7 +455,7 @@ static class Utils
                 if (codes.Count()>0) 
                 {
 
-                   var selfcodes = codes.Where((s)=>Regex.IsMatch(s.Substring(0,1),@"\p{L}"));
+                   var selfcodes = codes.Where((s)=>Regex.IsMatch(s.Substring(0,1),@"\w"));
                    var knowcodes = codes.Except(selfcodes);
                    // search for know or exact words if any
                    foreach (string code in (!bExact?(knowcodes.Count()>0?knowcodes:selfcodes.Take(1)):selfcodes.Take(1)))
@@ -789,6 +791,7 @@ static class Utils
                             doc.rank = 1 + (float) Math.Log(doc.rank);
                             if (doc.pages.First().id.Equals("0"))
                                  doc.rank *= DOC_RANK_MULTIPLY;
+                            doc.foundWords = new List<string>();
 
                             foreach (var source in sources)
                              if (source.Name.Equals(doc.Name.Split(':')[0])) 
@@ -801,18 +804,20 @@ static class Utils
                                             string headers = document["0"].text;
                                             if (doc.pages.First().id.Equals("0"))
                                             {
-                                                // TODO:  Select words in text
-                                                /* For example */
-                                                headers = new SpannableString.Builder().Add(headers,doc.pages.First().pos.ToArray());
+                                                SpannableString sp = new SpannableString.Builder().Add(headers,doc.pages.First().pos.ToArray());
+                                                //doc.foundWords.AddRange(sp.Where(s => s.format != 0).Select(s => s.text).Distinct().ToList());
+                                                headers = sp;
                                             }
                                             doc.MakeHeaders(headers);
                                             doc.pages.RemoveWhere((p) => { return p.id.Equals("0"); });
                                             foreach (var page in doc.pages)
                                             {
-                                                string text = document[page.id].text;
-                                                // TODO: Select words
-                                                page.text = PreparePageText(page,text);
-                                                
+                                                SpannableString str = PreparePageText(page, document[page.id].text);
+                                                doc.foundWords.AddRange(str.Where(s => s.format != 0).Select(s => s.text).Distinct().ToList());
+                                                page.text = str;
+                                                page.text = page.text.Replace("\r", " ");
+                                                page.text = page.text.Replace("\n", " ");
+
                                             }
                                             if (doc.pages.Count > 0)
                                             {
@@ -824,7 +829,7 @@ static class Utils
                                     }
                                     break;
                                 }
-                            
+                            doc.foundWords = doc.foundWords.Distinct().ToList(); 
                         }
 
                         result.foundDocs = new HashSet<ResultDocument>((from doc in result.foundDocs orderby doc.rank select doc).ToArray());
@@ -958,7 +963,7 @@ static class Utils
         }
 
 
-        private static string PreparePageText(ResultDocPage page,string text)
+        private static SpannableString PreparePageText(ResultDocPage page,string text)
         {
             // first define spanns
             SpannableString.Builder spans = new SpannableString.Builder();
@@ -976,10 +981,7 @@ static class Utils
             res = res.RegexReplace(@"\b\W*:+\W*\b", ": ");
             res = res.RegexReplace(@"\b\W*,+\W*\b", ", ");
 
-            text = res;
-            text = text.Replace("\r", " ");
-            text = text.Replace("\n", " ");
-            return (text);
+            return (res);
 
         }
 
@@ -1473,6 +1475,11 @@ static class Utils
 //             if (l == '_') return (false);
              return Regex.IsMatch(""+l,@"\p{L}");
          }
+        protected virtual bool IsLetterOrDigit(char l)
+        {
+            //             if (l == '_') return (false);
+            return Regex.IsMatch("" + l, @"\w");
+        }
 
 
 
@@ -1974,7 +1981,7 @@ static class Utils
                                                     int dc = fields[0].Length + 1;
                                                     foreach (var match in matches)
                                                     {
-                                                        if ((match.Length >= 1) && (IsLetter(match[0]))) //&& (!stopWords.Contains(match)))
+                                                        if ((match.Length >= 1) && (IsLetterOrDigit(match[0]))) //&& (!stopWords.Contains(match)))
                                                         {
                                                             //coord += (ulong)(fields[0].Length);
                                                             index.Add(FIELD_NAME_CHAR + fields[0], (uint)(coord + (ulong)(dc - 1)));

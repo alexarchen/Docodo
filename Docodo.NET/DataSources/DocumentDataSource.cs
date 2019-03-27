@@ -1,6 +1,8 @@
 using HtmlAgilityPack;
-using iTextSharp.text.pdf;
-using iTextSharp.text.pdf.parser;
+using iText;
+using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas.Parser;
+using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -26,16 +28,20 @@ namespace Docodo
         public class IndexPDFDocument : IndexedTextFile
         {
             private PdfReader pdfReader = null;
+            private PdfDocument pdfDocument = null;
+
             int npage = -1;
             string text = "";
             public IndexPDFDocument(string fname, IIndexDataSource parent) : base(fname, parent)
             {
                 pdfReader = new PdfReader(fname);
+                pdfDocument = new PdfDocument(pdfReader);
 
             }
             public IndexPDFDocument(string fname, Stream data, IIndexDataSource parent) : base(fname, parent)
             {
                 pdfReader = new PdfReader(data);
+                pdfDocument = new PdfDocument(pdfReader);
 
             }
 
@@ -44,18 +50,20 @@ namespace Docodo
                 if (headers != null) return headers();
 
                 var result = new StringBuilder();
-                if (pdfReader.Info.ContainsKey("Title"))
-                    result.Append("Title=" + pdfReader.Info["Title"] + "\n");
+
+
+                if (pdfDocument.GetDocumentInfo().GetTitle().Length>0)
+                    result.Append("Title=" + pdfDocument.GetDocumentInfo().GetTitle() + "\n");
                 result.Append("Name=" + Name + "\n");
-                if (pdfReader.Info.ContainsKey("Author"))
-                    result.Append("Author=" + pdfReader.Info["Author"] + "\n");
+                if (pdfDocument.GetDocumentInfo().GetAuthor().Length>0)
+                    result.Append("Author=" + pdfDocument.GetDocumentInfo().GetAuthor() + "\n");
                 result.Append("Source=" + parent.Name + "\n");
                 return GetHeadersFromDscrFile(fname, result.ToString());//Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
             }
 
             override public bool MoveNext()
             {
-                if (npage < pdfReader.NumberOfPages - 1)
+                if (npage < pdfDocument.GetNumberOfPages()- 1)
                 {
                     npage++;
                     if (npage == 0)
@@ -66,7 +74,8 @@ namespace Docodo
                     else
                     {
                         ITextExtractionStrategy strategy = new SimpleTextExtractionStrategy();
-                        string currentText = PdfTextExtractor.GetTextFromPage(pdfReader, npage, strategy);
+                        PdfPage page = pdfDocument.GetPage(npage);
+                        string currentText = PdfTextExtractor.GetTextFromPage(page, strategy);
                         currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));
                         _current = new IndexPage("" + npage, currentText);
                     }
@@ -84,8 +93,9 @@ namespace Docodo
 
             public override void Dispose()
             {
+                pdfDocument.Close();
                 pdfReader.Close();
-                pdfReader.Dispose();
+               
             }
 
         }

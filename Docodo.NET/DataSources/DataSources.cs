@@ -16,8 +16,6 @@
 //    along with this program.If not, see<https://www.gnu.org/licenses/>.
 
 using HtmlAgilityPack;
-using iTextSharp.text.pdf;
-using iTextSharp.text.pdf.parser;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;

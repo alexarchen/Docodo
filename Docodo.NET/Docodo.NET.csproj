@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>Docodo</RootNamespace>
     <Authors>Alex Archen</Authors>
-    <Description>DOCODO full-text powerful documental search engine
+    <Description>DOCODO full-text powerful documental search engine 
 - Support documents &amp; pages
 - Searches exact word coordinates
 - Searching with words distance limit and exact phrase
@@ -14,16 +14,16 @@
 - Supports different languages
 - Multithreaded
 - Scalable
-</Description>
+Licensed under both AGPL or Commercial</Description>
     <PackageId>DOCODO.NET</PackageId>
-    <PackageLicenseUrl>http://www.gnu.org/licenses/gpl.txt</PackageLicenseUrl>
+    <PackageLicenseUrl>http://www.gnu.org/licenses/agpl.txt</PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/alexarchen/Docodo</PackageProjectUrl>
     <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
     <PackageTags>search engine document page index full text</PackageTags>
-    <PackageReleaseNotes>1) found words markup added
-2) DBSet datasource added</PackageReleaseNotes>
-    <Version>0.1.1</Version>
+    <PackageReleaseNotes>1) Fully compatible with NET. Standard and Xamarin
+2) DBSetDatasource replaced by EntityDataSource</PackageReleaseNotes>
+    <Version>0.1.2</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Copyright>Copyright @ Alexey Zakharchenko</Copyright>
@@ -31,13 +31,12 @@
 
  <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
-    <PackageReference Include="EntityFramework" Version="6.2.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.8.9" />
-    <PackageReference Include="iTextSharp" Version="5.5.13" />
+    <PackageReference Include="itext7" Version="7.1.5" />
     <PackageReference Include="MySql.Data" Version="8.0.13" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="Portable.Text.Encoding" Version="0.8.3" />
-    <PackageReference Include="StemmersNet" Version="1.1.1" />
+    <PackageReference Include="StemmersNet.Standard" Version="1.1.1" />
     <PackageReference Include="System.Text.Encoding" Version="4.3.0" />
     <PackageReference Include="Ude.NET" Version="1.0.0" />
  </ItemGroup>

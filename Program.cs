@@ -127,7 +127,7 @@ namespace Docodo
                         if (Query == null) throw new InvalidDataException("No Query key");
                         if (FieldName == null) throw new InvalidDataException("No IndexType key");
                         if (BasePath == null) throw new InvalidDataException("No BasePath key");
-                        ind.AddDataSource(new MySqlDBDocSource("mysql_" + spl[1], BasePath, Connect, Query, FieldName));
+                        ind.AddDataSource(new MySqlDBDocSource("mysql_" + spl[1], BasePath, Connect, Query, DBDataSourceBase.IndexType.File, FieldName));// typeof(DBDataSourceBase.IndexType).GetEnumNames().Where(v=>v.Equals( FieldName.Split(':')[0]).,));
                     }
                     catch (Exception e)
                     {

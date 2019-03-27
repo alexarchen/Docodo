@@ -2,7 +2,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Entity;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -41,7 +40,7 @@ namespace Docodo
             FieldName = datafieldname??"";
         }
 
-        // Add document from or TEXT field
+        /// Add document from or TEXT field
         public virtual void AddRecord(string name,char[] buff, string fields, ConcurrentQueue<IIndexDocument> queue)
         {
             if ((fields != null) && (!fields.Contains("Source=")))
@@ -49,7 +48,7 @@ namespace Docodo
             Enqueue(queue,new IndexPagedTextFile(name,new string (buff),fields));
         }
 
-        // Add document from BLOB 
+        /// Add document from BLOB 
         public virtual void AddRecord(string name, Stream stream, string fields,ConcurrentQueue<IIndexDocument> queue)
         {
             bool isText = false;
@@ -103,7 +102,7 @@ namespace Docodo
           if (doc!=null)
                 Enqueue(queue,doc);
         }
-        // Add document stored in file fname
+        /// Add document stored in file fname
         public virtual void AddRecord(string name,string fname,string fields,ConcurrentQueue<IIndexDocument> queue)
         {
             if (indexType != IndexType.File) throw new InvalidDataException("Adding record of wrong IndexType");
@@ -136,36 +135,47 @@ namespace Docodo
     }
 
 
-    public class DBSetDataSource<T> : DBDataSourceBase where T : class
+    public class EntityDataSource<T> : DBDataSourceBase where T : class
     {
         
-        private DbSet<T> set;
-        private Func<T, bool> select;
+        private IEnumerable<T> set;
+        private Func<T, object> selectKey;
+        private Func<T, string> filenameFunc;
 
-        public DBSetDataSource(string name,string basepath,DbSet<T> entities,IndexType indextype, string datafieldname=null,Func<T, bool> select=null) : base(name, basepath, "", "", indextype,datafieldname)
+        public EntityDataSource(string name,string basepath, IEnumerable<T> entities,IndexType indextype, string datafieldname=null,string key=null) : base(name, basepath, "", "", indextype,datafieldname)
         {
             if (indexType == IndexType.Blob) throw new Exception("Not supported");
             set = entities;
-            this.select = select;
-
+            selectKey = (i)=>i.GetType().GetProperty(key).GetValue(i);
+            filenameFunc = (i) => i.GetType().GetProperty(datafieldname).GetValue(i).ToString();
         }
+        public EntityDataSource(string name, IQueryable<T> entities, Func<T,string> filenameFunc, Func<T,object> selectKey) : base(name, "", "", "", IndexType.File, "")
+        {
+            set = entities;
+            this.selectKey = selectKey;
+            this.filenameFunc = filenameFunc;
+        }
+
+
         protected override void Navigate(ConcurrentQueue<IIndexDocument> queue, CancellationToken token)
         {
             List<(string name,Type type)> fields = 
              typeof(T).GetProperties().Where(p => ((p.GetMethod != null) && (p.PropertyType.IsPublic) && (!p.PropertyType.IsArray) && (!p.PropertyType.IsClass))).Select(p => (p.Name, p.PropertyType)).ToList() ;
 
             int id = 1;
-            set.Where(select).AsQueryable().ForEachAsync<T>((item) =>
+            foreach (var item in set)
             {
           
                 token.ThrowIfCancellationRequested();
 
                 StringBuilder builder = new StringBuilder();
-                string primaryname = "";
+                //string primaryname = "";
                 string name = ""+(id++);
                 string fname = "";
                 String text = "";
 
+                name = selectKey(item).ToString();
+                fname = filenameFunc(item);
 
                 foreach (var field in fields)
                 {
@@ -173,14 +183,13 @@ namespace Docodo
 
                     if (val!=null)
                     {
-                        if (field.name.Equals(FieldName)) fname = val;
-                        if (field.name.ToLower().Equals("id")) primaryname = val;
-
-
+                        //if (field.name.Equals(FieldName)) fname = val;
+                        //if (field.name.ToLower().Equals("id")) primaryname = val;
                         builder.Append(field.name + "=" + val + "\n");
                     }
                 }
-                if (primaryname.Length > 0) name = primaryname;
+//                if (primaryname.Length > 0) name = primaryname;
+
                 builder.Append("Name=" + name + "\n");
 
                 switch (indexType)
@@ -195,7 +204,7 @@ namespace Docodo
                         break;
 
                 }
-            },token);
+            };
 
         }
     }
