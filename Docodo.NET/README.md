@@ -9,6 +9,7 @@ GNU GPL 3
 
   - Supports documents and pages
   - Search exact word positions on page
+  - Search request Suggestions
   - Search closely placed words and to exact phrase
   - Fast indexing from different sources: files, http, DB
   - Search with vocabularies and stemmers
@@ -20,6 +21,7 @@ GNU GPL 3
 # Характеристики
 - Поддержка страниц документов
 - Поиск точных координат слов на странице
+- Подсказки в поисковом запросе
 - Поиск с учетом дистанции между словами, включая поиск точной фразы
 - Быстрое индексирование из различных источников документов: файлы, http, БД
 - Поиск со словарями и стемматорами
