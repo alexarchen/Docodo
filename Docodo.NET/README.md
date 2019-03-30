@@ -9,8 +9,8 @@ GNU GPL 3
 
   - Supports documents and pages
   - Search exact word positions on page
-  - Search request Suggestions
-  - Search closely placed words and to exact phrase
+  - Search request suggestions
+  - Search with words distance limit and exact phrase
   - Fast indexing from different sources: files, http, DB
   - Search with vocabularies and stemmers
   - Morphological and "exact" search
@@ -22,7 +22,7 @@ GNU GPL 3
 - Поддержка страниц документов
 - Поиск точных координат слов на странице
 - Подсказки в поисковом запросе
-- Поиск с учетом дистанции между словами, включая поиск точной фразы
+- Поиск с учетом дистанции между словами; поиск точной фразы
 - Быстрое индексирование из различных источников документов: файлы, http, БД
 - Поиск со словарями и стемматорами
 - Морфологический и "точный" поиск
@@ -47,18 +47,17 @@ dotnet install DOCODO.NET
      }
    index.LoadStopWords("Dict\\stop.txt");
 ```
- Add datasources, for example to index c:\
+Add datasources, for example to index c:\
  
 ```sh
  index.AddDataSource(new DocumentsDataSource("doc", "c:\\"));
 ```
- Now you can index
-
+Now you can index
 
 ```sh
   await ind.CreateAsync();
 ```
-  and search
+and search
 
 ```sh
  if (index.CanSearch)
