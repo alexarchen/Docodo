@@ -32,13 +32,16 @@ Licensed under both AGPL or Commercial</Description>
  <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.8.9" />
-    <PackageReference Include="itext7" Version="7.1.5" />
     <PackageReference Include="MySql.Data" Version="8.0.13" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="Portable.Text.Encoding" Version="0.8.3" />
     <PackageReference Include="StemmersNet.Standard" Version="1.1.1" />
     <PackageReference Include="System.Text.Encoding" Version="4.3.0" />
     <PackageReference Include="Ude.NET" Version="1.0.0" />
+ </ItemGroup>
+
+ <ItemGroup>
+   <ProjectReference Include="..\PdfSharpTextExtractor\PdfSharpTextExtractor.csproj" />
  </ItemGroup>
 
 </Project>

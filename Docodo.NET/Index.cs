@@ -84,7 +84,7 @@ static class Utils
         return d[n, m];
     }
 
-}
+   }
 
 
     public class Index : IEnumerable<KeyValuePair<string,IndexSequence>>, IDisposable
@@ -474,32 +474,6 @@ static class Utils
                     }
                    }
                 }
-
-               /*  for (int q=0;q<codes.Length;q++)
-                if (self.Keys.Contains(codes[q].code))
-                {
-                    res = this[codes[q].code];
-                    
-
-
-                    if ((bKeepForms) && (bExact) && (codes[q].suff!=null))
-                    {
-                        res.R = -1;
-                        IndexSequence seq = this[codes[q].suff];
-                        seq.R = -1;
-                        res *= seq;
-                        // reduce close coords
-                        IndexSequence.Builder newres = new IndexSequence.Builder(Math.Abs(res.R));
-                        newres.AddRange(res);
-                        res = newres.build();
-                    }
-                    if (total==null)
-                    {
-                        total = res;
-                    }
-                    else
-                     total += res;
-                } */
 
             }
             catch (Exception e)
@@ -1133,6 +1107,8 @@ static class Utils
             }
             
         }
+
+
 
         event EventHandler CreationDone;
 

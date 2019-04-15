@@ -1,8 +1,4 @@
 using HtmlAgilityPack;
-using iText;
-using iText.Kernel.Pdf;
-using iText.Kernel.Pdf.Canvas.Parser;
-using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -14,7 +10,10 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-
+using PdfSharp;
+using PdfSharpTextExtractor;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 
 namespace Docodo
 {
@@ -27,22 +26,20 @@ namespace Docodo
 
         public class IndexPDFDocument : IndexedTextFile
         {
-            private PdfReader pdfReader = null;
             private PdfDocument pdfDocument = null;
+            private Extractor pdfExtractor=null;
 
             int npage = -1;
             string text = "";
             public IndexPDFDocument(string fname, IIndexDataSource parent) : base(fname, parent)
             {
-                pdfReader = new PdfReader(fname);
-                pdfDocument = new PdfDocument(pdfReader);
-
+                pdfDocument = PdfReader.Open(fname, PdfDocumentOpenMode.ReadOnly);
+                pdfExtractor = new Extractor(pdfDocument);
             }
             public IndexPDFDocument(string fname, Stream data, IIndexDataSource parent) : base(fname, parent)
             {
-                pdfReader = new PdfReader(data);
-                pdfDocument = new PdfDocument(pdfReader);
-
+                pdfDocument = PdfReader.Open(data, PdfDocumentOpenMode.ReadOnly);
+                pdfExtractor = new Extractor(pdfDocument);
             }
 
             public override string GetHeaders()
@@ -51,19 +48,19 @@ namespace Docodo
 
                 var result = new StringBuilder();
 
-
-                if (pdfDocument.GetDocumentInfo().GetTitle().Length>0)
-                    result.Append("Title=" + pdfDocument.GetDocumentInfo().GetTitle() + "\n");
+                
+                if (pdfDocument.Info.Title.Length>0)
+                    result.Append("Title=" + pdfDocument.Info.Title + "\n");
                 result.Append("Name=" + Name + "\n");
-                if (pdfDocument.GetDocumentInfo().GetAuthor().Length>0)
-                    result.Append("Author=" + pdfDocument.GetDocumentInfo().GetAuthor() + "\n");
+                if (pdfDocument.Info.Author.Length>0)
+                    result.Append("Author=" + pdfDocument.Info.Author + "\n");
                 result.Append("Source=" + parent.Name + "\n");
                 return GetHeadersFromDscrFile(fname, result.ToString());//Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
             }
 
             override public bool MoveNext()
             {
-                if (npage < pdfDocument.GetNumberOfPages()- 1)
+                if (npage < pdfDocument.PageCount- 1)
                 {
                     npage++;
                     if (npage == 0)
@@ -73,11 +70,11 @@ namespace Docodo
                     }
                     else
                     {
-                        ITextExtractionStrategy strategy = new SimpleTextExtractionStrategy();
-                        PdfPage page = pdfDocument.GetPage(npage);
-                        string currentText = PdfTextExtractor.GetTextFromPage(page, strategy);
-                        currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));
-                        _current = new IndexPage("" + npage, currentText);
+                        PdfPage page = pdfDocument.Pages[npage];
+                        StringBuilder text = new StringBuilder();
+                        pdfExtractor.ExtractText(page, text);
+                        //currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));
+                        _current = new IndexPage("" + npage, text.ToString());
                     }
                     return true;
                 }
@@ -93,8 +90,8 @@ namespace Docodo
 
             public override void Dispose()
             {
-                pdfDocument.Close();
-                pdfReader.Close();
+                pdfDocument.Dispose();
+                pdfExtractor.Dispose();
                
             }
 
