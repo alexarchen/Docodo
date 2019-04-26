@@ -252,7 +252,7 @@ namespace Docodo
             get
             {
                 // filename is relative
-                return new IndexedTextFile(Path.TrimEnd('\\')+"\\"+filename, this); 
+                return new IndexedTextFile(System.IO.Path.Combine(Path.TrimEnd('\\'),filename), this); 
             }
         }
         private int Count = 0;
@@ -418,7 +418,7 @@ namespace Docodo
                 DirectoryInfo dir = (new FileInfo(filename)).Directory;
                 do
                 {
-                    AddHeadersFromDscrFile(dir.FullName + "\\.dscr", ref headers);
+                    AddHeadersFromDscrFile(System.IO.Path.Combine(dir.FullName , ".dscr"), ref headers);
                     dir = dir.Parent;
                 }
                 while (dir != null);

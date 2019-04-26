@@ -8,7 +8,6 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
 
 namespace Docodo
 {
@@ -112,9 +111,9 @@ namespace Docodo
 
             IndexTextFilesDataSource.IndexedTextFile doc;
             if (fname.ToLower().EndsWith(".pdf"))
-                doc = new DocumentsDataSource.IndexPDFDocument(Path + "\\" + fname, this);
+                doc = new DocumentsDataSource.IndexPDFDocument(System.IO.Path.Combine(Path,fname), this);
             else
-                doc = new IndexTextFilesDataSource.IndexedTextFile(Path+"\\"+fname, this);
+                doc = new IndexTextFilesDataSource.IndexedTextFile(System.IO.Path.Combine(Path, fname), this);
 
             doc.Name = name;
 
@@ -138,18 +137,18 @@ namespace Docodo
     public class EntityDataSource<T> : DBDataSourceBase where T : class
     {
         
-        private IEnumerable<T> set;
+        private Func<IEnumerable<T>> set;
         private Func<T, object> selectKey;
         private Func<T, string> filenameFunc;
 
-        public EntityDataSource(string name,string basepath, IEnumerable<T> entities,IndexType indextype, string datafieldname=null,string key=null) : base(name, basepath, "", "", indextype,datafieldname)
+        public EntityDataSource(string name,string basepath, Func<IEnumerable<T>> entities,IndexType indextype, string datafieldname=null,string key=null) : base(name, basepath, "", "", indextype,datafieldname)
         {
             if (indexType == IndexType.Blob) throw new Exception("Not supported");
             set = entities;
             selectKey = (i)=>i.GetType().GetProperty(key).GetValue(i);
             filenameFunc = (i) => i.GetType().GetProperty(datafieldname).GetValue(i).ToString();
         }
-        public EntityDataSource(string name, IQueryable<T> entities, Func<T,string> filenameFunc, Func<T,object> selectKey) : base(name, "", "", "", IndexType.File, "")
+        public EntityDataSource(string name, Func<IEnumerable<T>> entities, Func<T,string> filenameFunc, Func<T,object> selectKey) : base(name, "", "", "", IndexType.File, "")
         {
             set = entities;
             this.selectKey = selectKey;
@@ -160,10 +159,10 @@ namespace Docodo
         protected override void Navigate(ConcurrentQueue<IIndexDocument> queue, CancellationToken token)
         {
             List<(string name,Type type)> fields = 
-             typeof(T).GetProperties().Where(p => ((p.GetMethod != null) && (p.PropertyType.IsPublic) && (!p.PropertyType.IsArray) && (!p.PropertyType.IsClass))).Select(p => (p.Name, p.PropertyType)).ToList() ;
+             typeof(T).GetProperties().Where(p => ((p.GetMethod != null) && (p.PropertyType.IsPublic) && (!p.PropertyType.IsArray) /*&& (!p.PropertyType.IsClass)*/)).Select(p => (p.Name, p.PropertyType)).ToList() ;
 
             int id = 1;
-            foreach (var item in set)
+            foreach (var item in set())
             {
           
                 token.ThrowIfCancellationRequested();
@@ -209,6 +208,7 @@ namespace Docodo
         }
     }
 
+    /*
     public class MySqlDBDocSource: DBDataSourceBase
     {
 
@@ -298,5 +298,5 @@ namespace Docodo
             conn.Close();
         }
     }
-
+    */
 }

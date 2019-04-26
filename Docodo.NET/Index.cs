@@ -1004,14 +1004,14 @@ static class Utils
 
         public bool Load()
         {
-            if ((File.Exists(WorkPath + "\\" + ".index")) && (File.Exists(WorkPath + "\\" + ".index.list")))
+            if ((File.Exists(Path.Combine(WorkPath,".index"))) && (File.Exists(Path.Combine(WorkPath,".index.list"))))
             {
                 CanSearch = false;
                 self.Clear();
 
                 try
                 {
-                    BinaryReader bin = new BinaryReader(File.OpenRead(WorkPath + "\\" + ".index"));
+                    BinaryReader bin = new BinaryReader(File.OpenRead(Path.Combine(WorkPath,".index")));
 
 
                     try
@@ -1054,7 +1054,7 @@ static class Utils
                     if (!InMemory) { reader = new StreamReader(bin.BaseStream); }
                     else bin.Close();
 
-                    bin = new BinaryReader(File.OpenRead(WorkPath + "\\" + ".index.list"));
+                    bin = new BinaryReader(File.OpenRead(Path.Combine(WorkPath,".index.list")));
 
                     PagesList = new IndexPageList();
                     PagesList.Load(bin);
@@ -1093,12 +1093,12 @@ static class Utils
 
         private IIndexDataSource[] sources;
         public int nDataSources { get => sources!=null?sources.Length:0; }
-        public bool CanIndex { get => (nDataSources > 0); }
+        public bool CanIndex { get => (nDataSources > 0) && (!IsCreating); }
 
         const string CACHE_END = ".cache.zip";
         public void AddDataSource(IIndexDataSource source)
         {
-            source = new IndexTextCacheDataSource(source, WorkPath + "\\" + source.Name + CACHE_END);
+            source = new IndexTextCacheDataSource(source, Path.Combine(WorkPath,source.Name + CACHE_END));
             if (sources == null) { sources = new IIndexDataSource[1]; sources[0] = source; }
             else
             {
@@ -1148,7 +1148,7 @@ static class Utils
                         IIndexDataSource tmpsource = source;
                         if (source.GetType().Equals(typeof(IndexTextCacheDataSource)))
                         {
-                            tmpsource = new IndexTextCacheDataSource(((IndexTextCacheDataSource)source).source, WorkPath + "\\" + source.Name + CACHE_END + "_");
+                            tmpsource = new IndexTextCacheDataSource(((IndexTextCacheDataSource)source).source, Path.Combine(WorkPath,source.Name + CACHE_END + "_"));
                             tmpSources.Add(tmpsource);
 
                         }
@@ -1178,7 +1178,7 @@ static class Utils
                         if (f.Length > 0) files.Add(f[0]);
                     }
 
-                    MergeIndexes((String[])files.ToArray(typeof(string)), WorkPath + "\\" + ".index");
+                    MergeIndexes((String[])files.ToArray(typeof(string)), Path.Combine(WorkPath,".index"));
          
                      //CanSearch now false   
 
@@ -1191,9 +1191,9 @@ static class Utils
                                 if (source.GetType().Equals(typeof(IndexTextCacheDataSource)))
                                 {
                                     source.Dispose(); // free resources
-                                    File.Delete(WorkPath + "\\" + source.Name + CACHE_END);
-                                    File.Move(WorkPath + "\\" + source.Name + CACHE_END + "_", WorkPath + "\\" + source.Name + CACHE_END);
-                                    ds.Add(new IndexTextCacheDataSource(((IndexTextCacheDataSource)source).source, WorkPath + "\\" + source.Name + CACHE_END));
+                                    File.Delete(Path.Combine(WorkPath,source.Name + CACHE_END));
+                                    File.Move(Path.Combine(WorkPath,source.Name + CACHE_END + "_"), Path.Combine(WorkPath ,source.Name + CACHE_END));
+                                    ds.Add(new IndexTextCacheDataSource(((IndexTextCacheDataSource)source).source, Path.Combine(WorkPath , source.Name + CACHE_END)));
                                 }
                                 else ds.Add(source);
 
@@ -1407,7 +1407,7 @@ static class Utils
                     bin.Close();
 
                     BinaryFormatter binf = new BinaryFormatter();
-                    FileStream f = File.OpenRead(new FileInfo(files[q]).DirectoryName + "\\index.tmplist");
+                    FileStream f = File.OpenRead(Path.Combine(new FileInfo(files[q]).DirectoryName, "index.tmplist"));
 
                     PagesList.AddFromList((List<KeyValuePair<string, ulong>>)binf.Deserialize(f),shifts[q]);
 
@@ -1708,7 +1708,7 @@ static class Utils
             {
                 Parent = parent;
                 MaxItems = parent.MaxTmpIndexItems;
-                Path = parent.WorkPath+"\\"+(nBuilder++);
+                Path = System.IO.Path.Combine(parent.WorkPath,""+(nBuilder++));
                 Directory.CreateDirectory(Path);
             }
             // create Builder with new Index (path, InMem, vocs) and loading stop words from stopwordsfile
@@ -1718,7 +1718,7 @@ static class Utils
                 if (stopwordsfile!=null)
                  Parent.LoadStopWords(stopwordsfile);
                 MaxItems = Parent.MaxTmpIndexItems;
-                Path = Parent.WorkPath + "\\" + (nBuilder++);
+                Path = System.IO.Path.Combine(Parent.WorkPath,""+(nBuilder++));
                 Directory.CreateDirectory(Path);
             }
 
@@ -1813,7 +1813,7 @@ static class Utils
                 try
                 {
                     Interlocked.Increment(ref nTmpIndex);
-                    FileStream file = File.Create($"{Path}\\{nTmpIndex}.tmpind");
+                    FileStream file = File.Create(System.IO.Path.Combine(Path,$"{nTmpIndex}.tmpind"));
                     BinaryWriter bin = new BinaryWriter(file);
                     bin.Write(maxCoord);
 
@@ -1830,7 +1830,7 @@ static class Utils
 
                     if (bSavePages)
                     {
-                        FileStream fileStream = File.Create($"{Path}\\index.tmplist");
+                        FileStream fileStream = File.Create(System.IO.Path.Combine(Path,$"index.tmplist"));
                         BinaryFormatter binf = new BinaryFormatter();
                         binf.Serialize(fileStream, pages);
                         fileStream.Close();
@@ -1858,32 +1858,16 @@ static class Utils
                     Parent.Dispose();
 
                     // Copy files 
-                    if (File.Exists(Parent.WorkPath + "\\.index")) File.Delete(Parent.WorkPath + "\\.index");
-                    if (File.Exists(Parent.WorkPath + "\\.index.list")) File.Delete(Parent.WorkPath + "\\.index.list");
-                    File.Move(Path + "\\1.tmpind", Parent.WorkPath + "\\.index");
+                    if (File.Exists(System.IO.Path.Combine(Parent.WorkPath ,".index"))) File.Delete(System.IO.Path.Combine(Parent.WorkPath , ".index"));
+                    if (File.Exists(System.IO.Path.Combine(Parent.WorkPath , ".index.list"))) File.Delete(System.IO.Path.Combine(Parent.WorkPath , ".index.list"));
+                    File.Move(System.IO.Path.Combine(Path , "1.tmpind"), System.IO.Path.Combine(Parent.WorkPath , ".index"));
 
                     Parent.PagesList = new IndexPageList();
                     Parent.PagesList.AddFromList(pages, 0);
 
-                    BinaryWriter binOut = new BinaryWriter(File.Create(Parent.WorkPath + "\\.index.list"));
+                    BinaryWriter binOut = new BinaryWriter(File.Create(System.IO.Path.Combine(Parent.WorkPath , ".index.list")));
                     Parent.PagesList.Save(binOut);
                     binOut.Close();
-
-                    /*
-                    Parent.self = new SortedList<string, IndexSequence>();
-                    foreach (var p in this)
-                        Parent.self.Add(p.Key, p.Value);
-
-                    BinaryFormatter binf = new BinaryFormatter();
-                    using (MemoryStream stream = new MemoryStream())
-                    {
-                       binf.Serialize(stream, pages);
-                       stream.Seek(0, SeekOrigin.Begin);
-                       Parent.PagesList.Load(new BinaryReader(stream));
-                    }
-
-                    Parent.CanSearch = true;
-                    */
                     Parent.Load();
                 }
 

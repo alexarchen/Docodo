@@ -35,22 +35,42 @@ namespace Docodo
                 string lang = new FileInfo(filename).Name.Split('.')[0];
                 Name = lang;
                 stemmer = (from el in Index.KnownStemmers where el.lang.Equals(lang) select el.stemmer).First();
-                /*Type stemtype = (from el in Index.Stemmers where el.lang.Equals(lang) select el.type).First();
-                if (stemtype != null)
-                {
-                    ConstructorInfo ctor = stemtype.GetConstructor(new Type[] { });
-                    stemmer = (IStemmer)ctor.Invoke(new object[] { });
-                }*/
                 Load(filename);
             }
-            
-            
         }
+
+        public Vocab(FileStream filestream)
+        {
+            if (filestream != null)
+            {
+                string lang = filestream.Name.Split('.')[0];
+                Name = lang;
+                stemmer = (from el in Index.KnownStemmers where el.lang.Equals(lang) select el.stemmer).First();
+                Load(filestream);
+            }
+        }
+        public Vocab(Stream stream,string name)
+        {
+            if (stream != null)
+            {
+                string lang = name.Split('.')[0];
+                Name = lang;
+                stemmer = (from el in Index.KnownStemmers where el.lang.Equals(lang) select el.stemmer).FirstOrDefault();
+                if (stemmer==null) throw new Exception("No such language stemmer");
+                Load(stream);
+            }
+        }
+
         //object stemmlocker = new object(); // ensure thread safe stemmer call
         public string Stem(string s) { /*lock (stemmlocker) {*/ if (stemmer != null) return (stemmer.Stem(s)); /*}*/ return s; }
         public void Load(string fname)
         {
-            BinaryReader r = new BinaryReader(File.OpenRead(fname));
+            Load(File.OpenRead(fname));
+        }
+
+        public virtual void Load(Stream stream)
+        {
+            BinaryReader r = new BinaryReader(stream);
             try
             {
                 Clear();
@@ -69,11 +89,13 @@ namespace Docodo
             {
                 r.Close();
             }
-            _Range.begin = this.Where((i) => {return (i.Key[0] >= 'a'); }).First().Key[0];
+            _Range.begin = this.Where((i) => { return (i.Key[0] >= 'a'); }).First().Key[0];
             _Range.end = this.Last().Key[0];
+
         }
+
         /* return word group or 0 if absent */
-        public int Search(string word)
+        public virtual int Search(string word)
         {
             int nG = 0;
             TryGetValue(word, out nG);

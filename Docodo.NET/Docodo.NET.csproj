@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>Docodo</RootNamespace>
-    <Authors>Alex Archen</Authors>
+    <Authors>AlexArchen</Authors>
     <Description>DOCODO full-text powerful documental search engine 
 - Support documents &amp; pages
 - Searches exact word coordinates
@@ -14,25 +14,27 @@
 - Supports different languages
 - Multithreaded
 - Scalable
-Licensed under both AGPL or Commercial</Description>
+Licensed under both GPL and Commercial</Description>
     <PackageId>DOCODO.NET</PackageId>
-    <PackageLicenseUrl>http://www.gnu.org/licenses/agpl.txt</PackageLicenseUrl>
+    <PackageLicenseUrl></PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/alexarchen/Docodo</PackageProjectUrl>
     <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
     <PackageTags>search engine document page index full text</PackageTags>
-    <PackageReleaseNotes>1) Fully compatible with NET. Standard and Xamarin
-2) DBSetDatasource replaced by EntityDataSource</PackageReleaseNotes>
-    <Version>0.1.2</Version>
+    <PackageReleaseNotes>1) Combining paths is done using Path.Combine now
+2) EntityDataSource improved
+3) Working with Xamarin on Android tested
+</PackageReleaseNotes>
+    <Version>0.1.4</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Copyright>Copyright @ Alexey Zakharchenko</Copyright>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
 
  <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.8.9" />
-    <PackageReference Include="MySql.Data" Version="8.0.13" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
     <PackageReference Include="Portable.Text.Encoding" Version="0.8.3" />
     <PackageReference Include="StemmersNet.Standard" Version="1.1.1" />

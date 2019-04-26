@@ -33,13 +33,27 @@ namespace Docodo
             string text = "";
             public IndexPDFDocument(string fname, IIndexDataSource parent) : base(fname, parent)
             {
-                pdfDocument = PdfReader.Open(fname, PdfDocumentOpenMode.ReadOnly);
-                pdfExtractor = new Extractor(pdfDocument);
+                try
+                {
+                    pdfDocument = PdfReader.Open(fname, PdfDocumentOpenMode.ReadOnly);
+                    pdfExtractor = new Extractor(pdfDocument);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Error open pdf: {fname}");
+                }
             }
             public IndexPDFDocument(string fname, Stream data, IIndexDataSource parent) : base(fname, parent)
             {
-                pdfDocument = PdfReader.Open(data, PdfDocumentOpenMode.ReadOnly);
+                try
+                {
+                    pdfDocument = PdfReader.Open(data, PdfDocumentOpenMode.ReadOnly);
                 pdfExtractor = new Extractor(pdfDocument);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Error open pdf: {fname}");
+                }
             }
 
             public override string GetHeaders()
@@ -60,6 +74,8 @@ namespace Docodo
 
             override public bool MoveNext()
             {
+                if (pdfDocument == null) return false;
+
                 if (npage < pdfDocument.PageCount- 1)
                 {
                     npage++;
@@ -90,8 +106,11 @@ namespace Docodo
 
             public override void Dispose()
             {
+                if (pdfExtractor != null)
+                    pdfExtractor.Dispose();
+
+                if (pdfDocument!=null)
                 pdfDocument.Dispose();
-                pdfExtractor.Dispose();
                
             }
 
