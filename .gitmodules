@@ -1,0 +1,4 @@
+[submodule "PdfSharpTextExtractor"]
+      path = PdfSharpTextExtractor
+      url = https://github.com/alexarchen/PdfSharpTextExtractor
+

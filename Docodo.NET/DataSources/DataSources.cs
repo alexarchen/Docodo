@@ -310,7 +310,7 @@ namespace Docodo
             public IndexedTextFile(string fname, IIndexDataSource parent)
             {
                 this.fname = fname;
-                Name = fname.Substring(parent.Path.Length);// fname.IndexOfAny(new char[] { '\\', '/' }, parent.Path.Length) + 1);
+                Name = fname.Substring(parent?.Path.Length??0);// fname.IndexOfAny(new char[] { '\\', '/' }, parent.Path.Length) + 1);
                 this.parent = parent;
             }
             public IIndexDataSource parent { get; private set; }

@@ -21,11 +21,9 @@ Licensed under both GPL and Commercial</Description>
     <RepositoryUrl>https://github.com/alexarchen/Docodo</RepositoryUrl>
     <RepositoryType>GitHub</RepositoryType>
     <PackageTags>search engine document page index full text</PackageTags>
-    <PackageReleaseNotes>1) Combining paths is done using Path.Combine now
-2) EntityDataSource improved
-3) Working with Xamarin on Android tested
-</PackageReleaseNotes>
-    <Version>0.1.4</Version>
+    <PackageReleaseNotes>1) Bug in IndexPdfDocument fixed
+2) Some small fixes and improvements</PackageReleaseNotes>
+    <Version>0.1.5</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Copyright>Copyright @ Alexey Zakharchenko</Copyright>

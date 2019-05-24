@@ -68,7 +68,7 @@ namespace Docodo
                 result.Append("Name=" + Name + "\n");
                 if (pdfDocument.Info.Author.Length>0)
                     result.Append("Author=" + pdfDocument.Info.Author + "\n");
-                result.Append("Source=" + parent.Name + "\n");
+                result.Append("Source=" + parent?.Name + "\n");
                 return GetHeadersFromDscrFile(fname, result.ToString());//Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(result.ToString()))));
             }
 
@@ -76,7 +76,7 @@ namespace Docodo
             {
                 if (pdfDocument == null) return false;
 
-                if (npage < pdfDocument.PageCount- 1)
+                if (npage <= pdfDocument.PageCount)
                 {
                     npage++;
                     if (npage == 0)
@@ -86,7 +86,7 @@ namespace Docodo
                     }
                     else
                     {
-                        PdfPage page = pdfDocument.Pages[npage];
+                        PdfPage page = pdfDocument.Pages[npage-1];
                         StringBuilder text = new StringBuilder();
                         pdfExtractor.ExtractText(page, text);
                         //currentText = Encoding.UTF8.GetString(ASCIIEncoding.Convert(Encoding.Default, Encoding.UTF8, Encoding.Default.GetBytes(currentText)));

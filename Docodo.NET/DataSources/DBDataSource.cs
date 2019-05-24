@@ -42,8 +42,8 @@ namespace Docodo
         /// Add document from or TEXT field
         public virtual void AddRecord(string name,char[] buff, string fields, ConcurrentQueue<IIndexDocument> queue)
         {
-            if ((fields != null) && (!fields.Contains("Source=")))
-                fields += $"Source={Name}\n";
+            AddRecordBase(name, fields);
+
             Enqueue(queue,new IndexPagedTextFile(name,new string (buff),fields));
         }
 
@@ -52,8 +52,8 @@ namespace Docodo
         {
             bool isText = false;
             IIndexDocument doc = null;
-            if ((fields != null) && (!fields.Contains("Source=")))
-              fields += $"Source={Name}\n";
+
+            AddRecordBase(name, fields);
 
             if ((indexType==IndexType.File) || (indexType != IndexType.Blob)) throw new InvalidDataException("Adding record of wrong IndexType");
 
@@ -101,28 +101,38 @@ namespace Docodo
           if (doc!=null)
                 Enqueue(queue,doc);
         }
+
+        protected virtual void AddRecordBase(string name,string fields)
+        {
+            if ((fields != null) && (!fields.Contains("Source=")))
+                fields += $"Source={Name}\n";
+
+        }
+
         /// Add document stored in file fname
         public virtual void AddRecord(string name,string fname,string fields,ConcurrentQueue<IIndexDocument> queue)
         {
             if (indexType != IndexType.File) throw new InvalidDataException("Adding record of wrong IndexType");
 
-            if ((fields != null) && (!fields.Contains("Source=")))
-                fields += $"Source={Name}\n";
+            AddRecordBase(name, fields);
 
-            IndexTextFilesDataSource.IndexedTextFile doc;
+            IndexTextFilesDataSource.IndexedTextFile doc=null;
             if (fname.ToLower().EndsWith(".pdf"))
                 doc = new DocumentsDataSource.IndexPDFDocument(System.IO.Path.Combine(Path,fname), this);
             else
                 doc = new IndexTextFilesDataSource.IndexedTextFile(System.IO.Path.Combine(Path, fname), this);
 
-            doc.Name = name;
-
-            if (fields != null)
+            if (doc != null)
             {
-              doc.headers = ()=>{ return fields; };
-            }
+                doc.Name = name;
 
-           Enqueue(queue,doc);
+                if (fields != null)
+                {
+                    doc.headers = () => { return fields; };
+                }
+
+                Enqueue(queue, doc);
+            }
         }
 
         protected override IIndexDocument DocumentFromItem(IIndexDocument item)

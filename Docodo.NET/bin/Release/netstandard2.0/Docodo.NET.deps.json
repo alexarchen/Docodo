@@ -1,13 +1,13 @@
 {
   "runtimeTarget": {
     "name": ".NETStandard,Version=v2.0/",
-    "signature": "07cb8dd9deddb438e497488b44a2f702717feb1f"
+    "signature": "8813d35b2fb32761da983664e108eac32fe04a95"
   },
   "compilationOptions": {},
   "targets": {
     ".NETStandard,Version=v2.0": {},
     ".NETStandard,Version=v2.0/": {
-      "Docodo.NET/0.1.4": {
+      "Docodo.NET/0.1.5": {
         "dependencies": {
           "DynamicExpresso.Core": "2.1.0",
           "HtmlAgilityPack": "1.8.9",
@@ -57,17 +57,6 @@
           "lib/netstandard2.0/Newtonsoft.Json.dll": {
             "assemblyVersion": "11.0.0.0",
             "fileVersion": "11.0.2.21924"
-          }
-        }
-      },
-      "PDFsharpNetStandard2/1.51.4845": {
-        "dependencies": {
-          "System.Drawing.Common": "4.5.0"
-        },
-        "runtime": {
-          "lib/netstandard2.0/PDFsharp.dll": {
-            "assemblyVersion": "1.0.0.0",
-            "fileVersion": "1.0.0.0"
           }
         }
       },
@@ -186,14 +175,6 @@
           "Microsoft.NETCore.Platforms": "1.1.0",
           "Microsoft.NETCore.Targets": "1.1.0",
           "System.Runtime": "4.3.0"
-        }
-      },
-      "System.Drawing.Common/4.5.0": {
-        "runtime": {
-          "lib/netstandard2.0/System.Drawing.Common.dll": {
-            "assemblyVersion": "4.0.0.0",
-            "fileVersion": "4.6.26515.6"
-          }
         }
       },
       "System.Globalization/4.3.0": {
@@ -666,9 +647,6 @@
         }
       },
       "PdfSharpTextExtractor/1.0.2": {
-        "dependencies": {
-          "PDFsharpNetStandard2": "1.51.4845"
-        },
         "runtime": {
           "PdfSharpTextExtractor.dll": {}
         }
@@ -676,7 +654,7 @@
     }
   },
   "libraries": {
-    "Docodo.NET/0.1.4": {
+    "Docodo.NET/0.1.5": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
@@ -722,13 +700,6 @@
       "sha512": "sha512-znZGbws7E4BA9jxNZ7FuiIRI3C9hrgatVQSTKhIYZYNOud4M5VfGlTYi6RdYO5sQrebFuF/g9UEV3hOxDMXF6Q==",
       "path": "newtonsoft.json/11.0.2",
       "hashPath": "newtonsoft.json.11.0.2.nupkg.sha512"
-    },
-    "PDFsharpNetStandard2/1.51.4845": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-8/nz+TCA7Q5l9jZErmEiy72eI0SfrcmOMD2PA4oag1iiAOijTCmllt8fCoUF7JLnPy1zMLBw/MFGOpKf0wF/Gw==",
-      "path": "pdfsharpnetstandard2/1.51.4845",
-      "hashPath": "pdfsharpnetstandard2.1.51.4845.nupkg.sha512"
     },
     "Portable.Text.Encoding/0.8.3": {
       "type": "package",
@@ -883,13 +854,6 @@
       "sha512": "sha512-rswfv0f/Cqkh78rA5S8eN8Neocz234+emGCtTF3lxPY96F+mmmUen6tbn0glN6PMvlKQb9bPAY5e9u7fgPTkKw==",
       "path": "system.diagnostics.tracing/4.3.0",
       "hashPath": "system.diagnostics.tracing.4.3.0.nupkg.sha512"
-    },
-    "System.Drawing.Common/4.5.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-uYixYbB0vzxSbc9B7jzwwUA8Upodaj3g2ZNnREWW6zoBw9DltzltcEa1g0I4u6ARqVJ0t4E3yJAWw5h2gvJlhQ==",
-      "path": "system.drawing.common/4.5.0",
-      "hashPath": "system.drawing.common.4.5.0.nupkg.sha512"
     },
     "System.Globalization/4.3.0": {
       "type": "package",
